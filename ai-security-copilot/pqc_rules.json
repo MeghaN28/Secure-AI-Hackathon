@@ -1,0 +1,81 @@
+{
+  "RSA": {
+    "risk": "High",
+    "category": "Quantum Vulnerable Public Key Cryptography",
+    "reason": "RSA relies on integer factorization, which can be broken by sufficiently powerful quantum computers using Shor's algorithm.",
+    "migration": "Replace RSA key exchange and encryption with post-quantum algorithms such as ML-KEM. For digital signatures, migrate toward ML-DSA or SLH-DSA.",
+    "priority": "Immediate"
+  },
+
+  "RSA-OAEP": {
+    "risk": "High",
+    "category": "Quantum Vulnerable Encryption",
+    "reason": "RSA-OAEP uses RSA mathematics and is vulnerable to quantum attacks.",
+    "migration": "Migrate to hybrid key establishment using ML-KEM-768 with traditional algorithms during transition.",
+    "priority": "Immediate"
+  },
+
+  "AES-128": {
+    "risk": "Medium",
+    "category": "Symmetric Cryptography",
+    "reason": "AES-128 is currently considered secure but quantum computers reduce the effective security margin through Grover's algorithm.",
+    "migration": "Prefer AES-256 for long-term security requirements.",
+    "priority": "Medium"
+  },
+
+  "AES-256": {
+    "risk": "Low",
+    "category": "Symmetric Cryptography",
+    "reason": "AES-256 provides strong security against both classical and quantum attacks.",
+    "migration": "Continue using AES-256 with proper key management practices.",
+    "priority": "Low"
+  },
+
+  "SHA1": {
+    "risk": "High",
+    "category": "Weak Hash Algorithm",
+    "reason": "SHA-1 has known collision vulnerabilities and is not recommended for security applications.",
+    "migration": "Replace SHA-1 with SHA-256, SHA-384, or SHA-3.",
+    "priority": "Immediate"
+  },
+
+  "MD5": {
+    "risk": "Critical",
+    "category": "Weak Hash Algorithm",
+    "reason": "MD5 is cryptographically broken due to collision attacks.",
+    "migration": "Immediately replace MD5 with SHA-256 or stronger hash algorithms.",
+    "priority": "Immediate"
+  },
+
+  "DES": {
+    "risk": "Critical",
+    "category": "Deprecated Encryption",
+    "reason": "DES has a small key size and is vulnerable to brute-force attacks.",
+    "migration": "Replace DES with AES-256.",
+    "priority": "Immediate"
+  },
+
+  "3DES": {
+    "risk": "High",
+    "category": "Deprecated Encryption",
+    "reason": "3DES has security limitations and is deprecated for many applications.",
+    "migration": "Replace with AES-256.",
+    "priority": "High"
+  },
+
+  "ML-KEM": {
+    "risk": "Low",
+    "category": "Post Quantum Cryptography",
+    "reason": "ML-KEM is a NIST standardized post-quantum key encapsulation mechanism.",
+    "migration": "Recommended for quantum-resistant key establishment.",
+    "priority": "Recommended"
+  },
+
+  "ML-DSA": {
+    "risk": "Low",
+    "category": "Post Quantum Cryptography",
+    "reason": "ML-DSA is a NIST standardized post-quantum digital signature algorithm.",
+    "migration": "Use for quantum-resistant digital signatures.",
+    "priority": "Recommended"
+  }
+}
