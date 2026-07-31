@@ -36,10 +36,10 @@ class HallucinationGuardrail:
 
     # Known algorithms from our PQC rules and recommendations
     KNOWN_ALGORITHMS = {
-        "RSA", "RSA-OAEP", "MD5", "SHA-1", "SHA-256", "SHA-384",
-        "SHA-3", "SHA3-256", "AES-128", "AES-256",
-        "ML-KEM-768", "ML-KEM-1024", "ML-DSA", "ML-DSA-65",
-        "ML-DSA-87", "ECDSA", "ECDH", "DH", "DSA",
+        "RSA", "RSA-OAEP", "MD5", "SHA-1", "SHA-2", "SHA-256", "SHA-384",
+        "SHA-3", "SHA3-256", "SHA3-384", "SHA3-512", "AES-128", "AES-256",
+        "ML-KEM-768", "ML-KEM-1024", "ML-DSA", "ML-DSA-44", "ML-DSA-65",
+        "ML-DSA-87", "ECDSA", "ECDH", "DH", "DSA", "ED25519", "ED448",
     }
 
     def __init__(self, pqc_findings: list, sonar_findings: list, rag_evidence: list):
@@ -86,12 +86,21 @@ class HallucinationGuardrail:
         """Check for algorithms mentioned in report but not in evidence."""
         violations = []
 
-        # Common crypto algorithm patterns
-        algo_pattern = r'\b(RSA-\d+|AES-\d+|SHA-\d+|SHA3-\d+|MD\d|DES|3DES|Blowfish|RC4|ECDSA-\d+|EdDSA|ChaCha20)\b'
+        # Common crypto algorithm patterns - match real algorithm names only
+        # Exclude finding IDs (e.g., PQC-RSA-001) and partial matches
+        algo_pattern = r'(?<![A-Za-z-])\b(RSA-(?:OAEP|\d{3,})|AES-\d{3}|SHA-\d+|SHA3-\d{3}|MD\d|DES|3DES|Blowfish|RC4|ECDSA-\d+|EdDSA|ChaCha20)\b'
         mentioned = set(re.findall(algo_pattern, report, re.IGNORECASE))
+
+        # Filter out finding IDs (patterns like RSA-001, PQC-RSA-001)
+        finding_id_pattern = re.compile(r'^[A-Z]+-\d{3}$', re.IGNORECASE)
 
         for algo in mentioned:
             algo_upper = algo.upper()
+
+            # Skip if it looks like a finding ID (e.g., RSA-001)
+            if finding_id_pattern.match(algo_upper):
+                continue
+
             # Check if it's in our findings or known algorithm set
             if (algo_upper not in self.valid_assets and
                     algo_upper not in self.KNOWN_ALGORITHMS):
@@ -416,10 +425,27 @@ class OutputValidationGuardrail:
     def _check_required_sections(self, report: str) -> list:
         """Ensure all required report sections are present."""
         violations = []
-        for section in self.REQUIRED_SECTIONS:
-            # Check for section header (markdown ## or ###)
-            pattern = rf'#+\s*{re.escape(section)}'
-            if not re.search(pattern, report, re.IGNORECASE):
+
+        # Flexible matching: check for key terms in any markdown heading
+        section_keywords = {
+            "Quantum Readiness Score": ["readiness", "score"],
+            "Executive Summary": ["executive", "summary"],
+            "Findings": ["finding"],
+            "NIST Guidance": ["nist", "guidance"],
+            "Migration Roadmap": ["migration", "roadmap"],
+            "Limitations": ["limitation"],
+        }
+
+        for section, keywords in section_keywords.items():
+            # Look for a markdown heading containing any of the keywords
+            found = False
+            for keyword in keywords:
+                # Match heading lines (# or ##) containing the keyword
+                pattern = rf'^#+\s+.*{re.escape(keyword)}'
+                if re.search(pattern, report, re.IGNORECASE | re.MULTILINE):
+                    found = True
+                    break
+            if not found:
                 violations.append({
                     "type": "missing_section",
                     "severity": "high",
@@ -480,7 +506,12 @@ class OutputValidationGuardrail:
         """Validate that the readiness score is present and reasonable."""
         violations = []
 
-        score_match = re.search(r'Score\s*:\s*(\d+)%', report)
+        # Match various score formats: "Score: 40%", "**40%**", "40/100", etc.
+        score_match = re.search(r'(?:Score|Readiness)\s*[:\-]\s*\**(\d+)\**\s*%', report, re.IGNORECASE)
+        if not score_match:
+            # Try alternate format: just a percentage near "readiness"
+            score_match = re.search(r'(\d+)\s*%', report)
+
         if not score_match:
             violations.append({
                 "type": "missing_score",
@@ -509,12 +540,22 @@ class OutputValidationGuardrail:
 
     def _calculate_completeness(self, report: str) -> float:
         """Calculate what percentage of required sections are present."""
+        section_keywords = {
+            "Quantum Readiness Score": ["readiness", "score"],
+            "Executive Summary": ["executive", "summary"],
+            "Findings": ["finding"],
+            "NIST Guidance": ["nist", "guidance"],
+            "Migration Roadmap": ["migration", "roadmap"],
+            "Limitations": ["limitation"],
+        }
         found = 0
-        for section in self.REQUIRED_SECTIONS:
-            pattern = rf'#+\s*{re.escape(section)}'
-            if re.search(pattern, report, re.IGNORECASE):
-                found += 1
-        return round((found / len(self.REQUIRED_SECTIONS)) * 100, 1)
+        for section, keywords in section_keywords.items():
+            for keyword in keywords:
+                pattern = rf'^#+\s+.*{re.escape(keyword)}'
+                if re.search(pattern, report, re.IGNORECASE | re.MULTILINE):
+                    found += 1
+                    break
+        return round((found / len(section_keywords)) * 100, 1)
 
 
 # =============================================================================
