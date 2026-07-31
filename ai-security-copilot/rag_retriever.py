@@ -1,9 +1,9 @@
-from langchain_ollama import OllamaEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
 
-embeddings = OllamaEmbeddings(
-    model="nomic-embed-text"
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
 
@@ -17,8 +17,8 @@ def retrieve_knowledge(query, k=3):
 
     results = db.similarity_search(
         query,
-        k=2
-)
+        k=k
+    )
 
 
     evidence = []

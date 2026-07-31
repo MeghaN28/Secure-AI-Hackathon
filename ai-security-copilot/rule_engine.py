@@ -1,5 +1,5 @@
 import json
-
+import os
 
 RULE_FILE = "pqc_rules.json"
 CBOM_FILE = "app-cbom-final.json"
@@ -128,6 +128,11 @@ def analyze_cbom(cbom, rules):
 
 
 def save_results(findings):
+
+    output_dir = os.path.dirname(OUTPUT_FILE)
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(OUTPUT_FILE, "w") as f:
         json.dump(findings, f, indent=2)

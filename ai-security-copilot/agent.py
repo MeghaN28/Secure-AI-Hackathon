@@ -1,8 +1,14 @@
 import json
-import subprocess
-
+import os
 from rag_retriever import retrieve_knowledge
 
+try:
+    from mistralai import Mistral
+except ImportError as e:
+    raise ImportError(
+        "Could not import 'Mistral' from 'mistralai'. "
+        "Please ensure 'mistralai>=1.0.0' is installed correctly and not overridden by conflicting packages."
+    ) from e
 
 FINDINGS_FILE = "output/security_findings.json"
 REMEDIATION_FILE = "output/remediation_plan.json"
@@ -19,67 +25,54 @@ def load_remediation_plan():
         return json.load(f)
 
 
-def ask_ollama(prompt):
-    result = subprocess.run(
-        ["ollama", "run", "llama3.1"],
-        input=prompt,
-        text=True,
-        capture_output=True,
+def ask_mistral(prompt: str) -> str:
+    """Queries Mistral AI API using the modern v1+ client."""
+    api_key = os.getenv("MISTRAL_API_KEY")
+    if not api_key:
+        raise ValueError("Environment variable MISTRAL_API_KEY is not set.")
+
+    client = Mistral(api_key=api_key)
+
+    response = client.chat.complete(
+        model="mistral-small-latest",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a Senior Post Quantum Cryptography Security Engineer. "
+                    "Generate enterprise security migration assessments."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
     )
 
-    if result.returncode != 0:
-        return result.stderr
-
-    return result.stdout
+    return response.choices[0].message.content
 
 
 def calculate_readiness_score(findings):
-
     score = 100
-
-
     severity_penalty = {
-
         "Critical": 30,
         "High": 20,
         "Medium": 10,
-        "Low": 0
-
+        "Low": 0,
     }
-
-
-    # Only count unique crypto algorithms
 
     analyzed_assets = set()
 
-
     for finding in findings:
-
-        asset = finding.get(
-            "asset"
-        )
-
+        asset = finding.get("asset")
 
         if asset in analyzed_assets:
             continue
 
-
         analyzed_assets.add(asset)
+        risk = finding.get("risk", "Low")
+        score -= severity_penalty.get(risk, 0)
 
+    return max(score, 0)
 
-        risk = finding.get(
-            "risk",
-            "Low"
-        )
-
-
-        score -= severity_penalty.get(
-            risk,
-            0
-        )
-
-
-    return max(score,0)
 
 def generate_migration_waves(findings):
     waves = {
@@ -137,7 +130,7 @@ def build_prompt(findings, remediation_plan):
                 "owner": finding["owner"],
                 "nist_reference": finding["nist_reference"],
                 "confidence": finding["confidence"],
-                "evidence": finding["evidence"],
+                "evidence": evidence,
             }
         )
 
@@ -177,7 +170,6 @@ Score: {readiness_score}%
 ## Executive Summary
 
 Explain:
-
 - Current quantum readiness
 - Main cryptographic risks
 - Overall migration urgency
@@ -186,44 +178,27 @@ Explain:
 
 For every finding:
 
-### Asset: {finding["asset"]}
+### Asset: <Asset Name>
 
 Finding ID:
-
 Risk:
-
 Category:
-
 Priority:
-
 Why it matters:
-
 Evidence:
-
 Reference only CBOM evidence provided.
 
 Migration Assessment:
-
 Current State:
-
 Target State:
-
 Migration Recommendation:
-
 Recommended Algorithm:
-
 Transition Strategy:
-
 Migration Wave:
-
 Estimated Effort:
-
 Estimated Hours:
-
 Owner:
-
 Confidence:
-
 Auto Fix Available:
 
 ## NIST Guidance
@@ -231,7 +206,6 @@ Auto Fix Available:
 Use only retrieved NIST evidence.
 
 Mention:
-
 - FIPS references
 - Migration guidance
 - PQC standards
@@ -239,36 +213,29 @@ Mention:
 ## Migration Roadmap
 
 Wave 1 - Immediate
-
 Critical and high-risk migrations.
 
 Wave 2 - High Priority
-
 Medium-risk improvements.
 
 Wave 3 - Optimization
-
 Long-term improvements.
 
 ## Limitations
 
 Explain:
-
 - Assessment scope
 - Evidence limitations
 - Unknown cryptographic assets
 - Implementation dependencies
 
 Security Data:
-
 {json.dumps(knowledge_context, indent=2)}
 
 Remediation Plan:
-
 {json.dumps(remediation_plan, indent=2)}
 
 Migration Waves:
-
 {json.dumps(migration_waves, indent=2)}
 """
 
@@ -282,11 +249,13 @@ if __name__ == "__main__":
     print(f"Analyzing {len(findings)} security findings...\n")
 
     prompt = build_prompt(findings, remediation_plan)
-    response = ask_ollama(prompt)
+    response = ask_mistral(prompt)
 
     print("\n===== AI SECURITY REPORT =====\n")
     print(response)
 
+    # Ensure output directory exists before writing
+    os.makedirs(os.path.dirname(REPORT_FILE), exist_ok=True)
     with open(REPORT_FILE, "w") as f:
         f.write(response)
 
