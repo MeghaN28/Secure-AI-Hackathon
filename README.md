@@ -29,6 +29,23 @@ The primary flow in `ai-security-copilot/` performs the following steps:
 4. Produce a security finding set.
 5. Generate a migration/remediation plan.
 6. Build an AI-generated report summarizing the quantum-readiness posture.
+7. Use the RAG retrieval layer to ground the report with NIST and migration knowledge stored in the local vector database.
+
+## RAG and Vector Database
+
+The knowledge-base retrieval flow now uses a single shared Hugging Face embedding model configuration defined in `ai-security-copilot/embedding_config.py`.
+
+The RAG components are:
+
+- `ingest_documents.py` — builds the Chroma vector database from the PDF corpus in `knowledge_base/`
+- `rag_retriever.py` — loads the existing vector database and retrieves relevant evidence for the report generator
+- `query_knowledge_base.py` — simple command-line search utility for manual retrieval testing
+- `vector_db/` — persisted Chroma storage for the generated embeddings
+
+Important:
+
+- All ingestion and retrieval paths are aligned to the same Hugging Face embedding model.
+- If the embedding model changes, the existing `vector_db/` contents should be removed or rebuilt so that stored vectors match the new embedding space.
 
 ## Quick Start
 
@@ -46,6 +63,15 @@ cd ai-security-copilot
 pip install -r requirements.txt
 ```
 
+### Generate the Vector Database
+
+```bash
+cd ai-security-copilot
+python3 ingest_documents.py
+```
+
+This creates or refreshes the Chroma vector store in `vector_db/` using the shared Hugging Face embedding model.
+
 ### Run the Pipeline Locally
 
 ```bash
@@ -57,6 +83,13 @@ python3 agent.py
 ```
 
 This produces the report and supporting artifacts in the `output/` directory.
+
+### Query the Knowledge Base Manually
+
+```bash
+cd ai-security-copilot
+python3 query_knowledge_base.py
+```
 
 ## CI Workflow
 
