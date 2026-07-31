@@ -63,7 +63,7 @@ venv/
 .venv/
 
 # Generated reports
-**/reports/
+# **/reports/  # Old: was ignoring the reports folder, now we want to commit them
 **/cbom-reports/*.json
 
 # OS

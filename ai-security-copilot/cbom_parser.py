@@ -1,7 +1,8 @@
 import json
 
 
-CBOM_FILE = "app-cbom-final.json"
+# CBOM_FILE = "app-cbom-final.json"  # Old: static hardcoded CBOM
+CBOM_FILE = "cbom-generated.json"
 RULE_FILE = "pqc_rules.json"
 
 

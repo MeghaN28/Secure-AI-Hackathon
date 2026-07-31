@@ -2,7 +2,8 @@ import json
 import os
 
 RULE_FILE = "pqc_rules.json"
-CBOM_FILE = "app-cbom-final.json"
+# CBOM_FILE = "app-cbom-final.json"  # Old: static hardcoded CBOM
+CBOM_FILE = "cbom-generated.json"
 OUTPUT_FILE = "output/security_findings.json"
 
 

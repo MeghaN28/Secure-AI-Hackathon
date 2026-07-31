@@ -5,14 +5,22 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      # - "wrongsecrets/**"  # Old: submodule, can't track changes
+      - "wrongsecrets_new/**"
 
   push:
     branches:
       - "*"
+    paths:
+      # - "wrongsecrets/**"  # Old: submodule, can't track changes
+      - "wrongsecrets_new/**"
+
+  workflow_dispatch:
 
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
@@ -23,16 +31,77 @@ jobs:
     runs-on: ubuntu-latest
 
 
-    defaults:
-      run:
-        working-directory: ./ai-security-copilot
-
-
     steps:
+
+      # ─────────────────────────────────────────────
+      # Setup
+      # ─────────────────────────────────────────────
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      - name: Setup Java (needed for WrongSecrets build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          # java-version: "17"  # Old: WrongSecrets now requires Java 25
+          java-version: "25"
+
+
+      - name: Build WrongSecrets (required for accurate Java scanning)
+        # working-directory: ./wrongsecrets  # Old: submodule path
+        working-directory: ./wrongsecrets_new
+        run: |
+          if [ -f "pom.xml" ]; then
+            mvn -B clean package -DskipTests
+          elif [ -f "build.gradle" ]; then
+            ./gradlew build -x test
+          else
+            echo "No build file found, proceeding with source-only scan"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+      # ─────────────────────────────────────────────
+      # CBOM Generation — uses official GitHub Action
+      # Runs entirely on GitHub, no external services
+      # ─────────────────────────────────────────────
+
+      - name: Generate CBOM from WrongSecrets
+        uses: cbomkit/cbomkit-action@v2.2.0
+        id: cbom
+        env:
+          CBOMKIT_LANGUAGES: java
+          CBOMKIT_OUTPUT_DIR: cbom-output
+
+
+      - name: Copy CBOM to copilot input
+        run: |
+          # cbomkit-action produces cbom.json (consolidated) in the output dir
+          if [ -f "cbom-output/cbom.json" ]; then
+            cp cbom-output/cbom.json ai-security-copilot/cbom-generated.json
+            echo "Fresh CBOM generated and copied."
+          else
+            echo "WARNING: CBOM not found in expected location. Listing output:"
+            find cbom-output/ -name "*.json" 2>/dev/null || true
+            # Try to find any generated cbom file
+            CBOM_FILE=$(find . -path "*/cbom-output/*.json" -name "cbom*.json" | head -1)
+            if [ -n "$CBOM_FILE" ]; then
+              cp "$CBOM_FILE" ai-security-copilot/cbom-generated.json
+              echo "Found and copied: $CBOM_FILE"
+            else
+              # Fallback: use old static CBOM file
+              cp ai-security-copilot/app-cbom-final.json ai-security-copilot/cbom-generated.json
+              echo "Using existing static CBOM file as fallback."
+            fi
+          fi
+
+
+      # ─────────────────────────────────────────────
+      # PQC Analysis Pipeline
+      # ─────────────────────────────────────────────
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -40,99 +109,100 @@ jobs:
           python-version: "3.11"
 
 
-      - name: Install dependencies
+      - name: Install Python dependencies
+        working-directory: ./ai-security-copilot
         run: |
           python -m pip install --upgrade pip
-
           pip install --no-cache-dir -r requirements.txt
-
           pip uninstall -y mistralai || true
-
           pip install --no-cache-dir mistralai==1.0.2
 
 
-      - name: Verify Mistral SDK
-        run: |
-          pip show mistralai
-
-          python3 -c "from mistralai import Mistral; print('Mistral SDK loaded successfully!')"
-
-
       - name: Run CBOM Security Analysis
-        run: |
-          python3 cbom_parser.py
+        working-directory: ./ai-security-copilot
+        run: python3 cbom_parser.py
 
 
       - name: Run PQC Rule Engine
-        run: |
-          python3 rule_engine.py
+        working-directory: ./ai-security-copilot
+        run: python3 rule_engine.py
 
 
       - name: Generate Remediation Plan
-        run: |
-          python3 remediation_engine.py
+        working-directory: ./ai-security-copilot
+        run: python3 remediation_engine.py
 
 
       - name: Generate AI Security Report
+        working-directory: ./ai-security-copilot
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+        run: python3 agent.py
 
+
+      # ─────────────────────────────────────────────
+      # Store Report with Date-Time stamp
+      # ─────────────────────────────────────────────
+
+      - name: Save timestamped report
         run: |
-          python3 agent.py
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          REPORT_DIR="reports"
+          REPORT_NAME="quantum_security_report_${TIMESTAMP}.md"
+
+          mkdir -p "$REPORT_DIR"
+
+          cp ai-security-copilot/output/quantum_security_report.md \
+             "${REPORT_DIR}/${REPORT_NAME}"
+
+          # Keep a latest copy for quick access
+          cp ai-security-copilot/output/quantum_security_report.md \
+             "${REPORT_DIR}/latest_report.md"
+
+          echo "REPORT_PATH=${REPORT_DIR}/${REPORT_NAME}" >> $GITHUB_ENV
+          echo "Report saved: ${REPORT_DIR}/${REPORT_NAME}"
 
 
-      - name: Upload Security Report Artifact
+      - name: Upload Report as Artifact
         if: always()
         uses: actions/upload-artifact@v4
-
         with:
           name: quantum-security-report
-          path: ai-security-copilot/output/quantum_security_report.md
+          path: reports/
 
 
-      - name: Comment Security Report on PR
+      - name: Commit Report to Repository
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git diff --cached --quiet || git commit -m "report: PQC security assessment $(date -u +%Y-%m-%d)"
+          git push
+
+
+      - name: Comment Report on PR
         if: github.event_name == 'pull_request'
-
         uses: actions/github-script@v7
-
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
           script: |
             const fs = require('fs');
-
 
             const reportPath =
               'ai-security-copilot/output/quantum_security_report.md';
 
-
             if (!fs.existsSync(reportPath)) {
-
-              core.setFailed(
-                "Security report was not generated."
-              );
-
+              core.setFailed("Security report was not generated.");
               return;
-
             }
 
-
-            const report = fs.readFileSync(
-              reportPath,
-              'utf8'
-            );
-
+            const report = fs.readFileSync(reportPath, 'utf8');
 
             await github.rest.issues.createComment({
-
               owner: context.repo.owner,
-
               repo: context.repo.repo,
-
               issue_number: context.issue.number,
-
-              body:
-                "## 🔐 PQC Security Assessment Report\n\n" + report
-
+              body: "## 🔐 PQC Security Assessment Report\n\n" + report
             });
