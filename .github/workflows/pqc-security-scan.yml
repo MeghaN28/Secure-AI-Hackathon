@@ -2,6 +2,7 @@ name: PQC Security Scan
 
 
 on:
+
   pull_request:
     branches:
       - main
@@ -11,70 +12,149 @@ on:
       - "*"
 
 
+
 permissions:
+
   contents: read
+
   pull-requests: write
+
   issues: write
+
 
 
 jobs:
 
+
   pqc-scan:
+
 
     runs-on: ubuntu-latest
 
 
     defaults:
+
       run:
+
         working-directory: ./ai-security-copilot
+
 
 
     steps:
 
 
+
+      # ==============================
+      # CHECKOUT
+      # ==============================
+
       - name: Checkout repository
+
         uses: actions/checkout@v4
 
 
 
+
+
+      # ==============================
+      # PYTHON SETUP
+      # ==============================
+
       - name: Setup Python
+
         uses: actions/setup-python@v5
+
         with:
+
           python-version: "3.11"
 
 
 
+
+
+      # ==============================
+      # CACHE HUGGINGFACE
+      # ==============================
+
       - name: Cache HuggingFace Models
+
         uses: actions/cache@v4
+
         with:
+
           path: ~/.cache/huggingface
+
           key: huggingface-model-cache-v1
+
           restore-keys: |
+
             huggingface-model-cache-
 
 
 
+
+
+      # ==============================
+      # CACHE CHROMA VECTOR DATABASE
+      # ==============================
+
+      - name: Cache Chroma Vector Database
+
+        uses: actions/cache@v4
+
+        with:
+
+          path: ./ai-security-copilot/vector_db
+
+          key: chroma-vector-db-v1
+
+          restore-keys: |
+
+            chroma-vector-db-
+
+
+
+
+
+      # ==============================
+      # INSTALL DEPENDENCIES
+      # ==============================
+
       - name: Install dependencies
+
         run: |
 
           python -m pip install --upgrade pip
 
+
           pip install --no-cache-dir -r requirements.txt
 
+
           pip uninstall -y mistralai || true
+
 
           pip install --no-cache-dir mistralai==1.0.2
 
 
 
 
+
+      # ==============================
+      # VERIFY SDK
+      # ==============================
+
       - name: Verify Mistral SDK
+
         run: |
 
           python3 -c "
+
           from mistralai import Mistral
+
           print('Mistral SDK loaded successfully!')
+
           "
+
 
 
 
@@ -84,9 +164,11 @@ jobs:
       # ==============================
 
       - name: Run CBOM Security Analysis
+
         run: |
 
           python3 cbom_parser.py
+
 
 
 
@@ -96,6 +178,7 @@ jobs:
       # ==============================
 
       - name: Parse SonarQube Findings
+
         run: |
 
           python3 sonarqube_parser.py
@@ -103,7 +186,13 @@ jobs:
 
 
 
+
+      # ==============================
+      # COMBINE SECURITY CONTEXT
+      # ==============================
+
       - name: Combine CBOM and Sonar Context
+
         run: |
 
           python3 sonar_integration.py
@@ -111,11 +200,13 @@ jobs:
 
 
 
+
       # ==============================
-      # PQC INTELLIGENCE
+      # PQC RULE ENGINE
       # ==============================
 
       - name: Run PQC Rule Engine
+
         run: |
 
           python3 rule_engine.py
@@ -123,10 +214,48 @@ jobs:
 
 
 
+
+      # ==============================
+      # REMEDIATION ENGINE
+      # ==============================
+
       - name: Generate Remediation Plan
+
         run: |
 
           python3 remediation_engine.py
+
+
+
+
+
+      # ==============================
+      # RAG INGESTION
+      # ==============================
+
+      - name: Build RAG Knowledge Database
+
+        run: |
+
+          rm -rf vector_db
+
+
+          python3 ingest.py
+
+
+
+
+
+      # ==============================
+      # RAG VALIDATION
+      # ==============================
+
+      - name: Validate RAG Retrieval
+
+        run: |
+
+          python3 testrag.py
+
 
 
 
@@ -137,20 +266,28 @@ jobs:
 
       - name: Generate AI Security Report
 
+
         env:
+
 
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
+
           HF_HOME: ~/.cache/huggingface
 
+
           TRANSFORMERS_CACHE: ~/.cache/huggingface
+
 
           HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
 
 
+
         run: |
 
+
           python3 agent.py
+
 
 
 
@@ -161,16 +298,20 @@ jobs:
 
       - name: Upload Security Report Artifact
 
+
         if: always()
+
 
         uses: actions/upload-artifact@v4
 
 
         with:
 
+
           name: quantum-security-report
 
-          path: ai-security-copilot/output/quantum_security_report.md
+
+          path: ai-security-copilot/output/quantum-security-report.md
 
 
 
@@ -182,51 +323,71 @@ jobs:
 
       - name: Comment Security Report on PR
 
+
         if: github.event_name == 'pull_request'
+
 
         uses: actions/github-script@v7
 
 
         with:
 
+
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
 
+
           script: |
+
 
             const fs = require('fs');
 
 
             const reportPath =
-              'ai-security-copilot/output/quantum_security_report.md';
+              'ai-security-copilot/output/quantum-security-report.md';
+
 
 
             if (!fs.existsSync(reportPath)) {
+
 
               core.warning(
                 "Security report was not generated."
               );
 
+
               return;
+
 
             }
 
 
-            const report = fs.readFileSync(
-              reportPath,
-              'utf8'
-            );
+
+            const report =
+              fs.readFileSync(
+                reportPath,
+                'utf8'
+              );
+
 
 
             await github.rest.issues.createComment({
 
+
               owner: context.repo.owner,
+
 
               repo: context.repo.repo,
 
+
               issue_number: context.issue.number,
 
+
               body:
-                "## 🔐 PQC Security Assessment Report\n\n" + report
+
+                "## 🔐 PQC Security Assessment Report\n\n" +
+
+                report
+
 
             });
