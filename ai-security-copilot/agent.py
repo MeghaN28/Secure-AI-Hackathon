@@ -1,262 +1,714 @@
 import json
 import os
+
 from rag_retriever import retrieve_knowledge
 
 try:
     from mistralai import Mistral
+
 except ImportError as e:
     raise ImportError(
         "Could not import 'Mistral' from 'mistralai'. "
-        "Please ensure 'mistralai>=1.0.0' is installed correctly and not overridden by conflicting packages."
+        "Please ensure 'mistralai>=1.0.0' is installed correctly."
     ) from e
 
-FINDINGS_FILE = "output/security_findings.json"
+
+SECURITY_CONTEXT_FILE = "output/combined_security_context.json"
+
 REMEDIATION_FILE = "output/remediation_plan.json"
+
 REPORT_FILE = "output/quantum_security_report.md"
 
 
-def load_findings():
-    with open(FINDINGS_FILE, "r") as f:
+
+def load_security_context():
+
+    with open(
+        SECURITY_CONTEXT_FILE,
+        "r"
+    ) as f:
+
         return json.load(f)
+
 
 
 def load_remediation_plan():
-    with open(REMEDIATION_FILE, "r") as f:
+
+    with open(
+        REMEDIATION_FILE,
+        "r"
+    ) as f:
+
         return json.load(f)
 
 
-def ask_mistral(prompt: str) -> str:
-    """Queries Mistral AI API using the modern v1+ client."""
-    api_key = os.getenv("MISTRAL_API_KEY")
-    if not api_key:
-        raise ValueError("Environment variable MISTRAL_API_KEY is not set.")
 
-    client = Mistral(api_key=api_key)
+def ask_mistral(prompt: str) -> str:
+
+    api_key = os.getenv(
+        "MISTRAL_API_KEY"
+    )
+
+
+    if not api_key:
+
+        raise ValueError(
+            "Environment variable MISTRAL_API_KEY is not set."
+        )
+
+
+    client = Mistral(
+        api_key=api_key
+    )
+
 
     response = client.chat.complete(
+
         model="mistral-small-latest",
+
         messages=[
+
             {
                 "role": "system",
+
                 "content": (
-                    "You are a Senior Post Quantum Cryptography Security Engineer. "
-                    "Generate enterprise security migration assessments."
+
+                    "You are a Senior Application Security "
+                    "and Post Quantum Cryptography Security Engineer. "
+
+                    "Generate enterprise security migration "
+                    "assessments using provided evidence only."
+
                 ),
+
             },
-            {"role": "user", "content": prompt},
+
+            {
+                "role": "user",
+
+                "content": prompt,
+
+            },
+
         ],
+
     )
+
 
     return response.choices[0].message.content
 
 
+
 def calculate_readiness_score(findings):
+
     score = 100
+
+
     severity_penalty = {
+
         "Critical": 30,
+
         "High": 20,
+
         "Medium": 10,
+
         "Low": 0,
+
     }
+
 
     analyzed_assets = set()
 
+
     for finding in findings:
-        asset = finding.get("asset")
+
+
+        asset = finding.get(
+            "asset"
+        )
+
 
         if asset in analyzed_assets:
+
             continue
 
-        analyzed_assets.add(asset)
-        risk = finding.get("risk", "Low")
-        score -= severity_penalty.get(risk, 0)
 
-    return max(score, 0)
+        analyzed_assets.add(
+            asset
+        )
+
+
+        risk = finding.get(
+            "risk",
+            "Low"
+        )
+
+
+        score -= severity_penalty.get(
+            risk,
+            0
+        )
+
+
+    return max(
+        score,
+        0
+    )
+
 
 
 def generate_migration_waves(findings):
+
     waves = {
+
+
         "Wave 1 - Immediate": [],
+
+
         "Wave 2 - High Priority": [],
+
+
         "Wave 3 - Optimization": [],
+
+
     }
 
-    for finding in findings:
-        risk = finding.get("risk")
 
-        if risk in ["Critical", "High"]:
-            waves["Wave 1 - Immediate"].append(finding["asset"])
+
+    for finding in findings:
+
+
+        risk = finding.get(
+            "risk"
+        )
+
+
+        if risk in [
+            "Critical",
+            "High"
+        ]:
+
+            waves[
+                "Wave 1 - Immediate"
+            ].append(
+                finding.get("asset")
+            )
+
+
         elif risk == "Medium":
-            waves["Wave 2 - High Priority"].append(finding["asset"])
+
+            waves[
+                "Wave 2 - High Priority"
+            ].append(
+                finding.get("asset")
+            )
+
+
         else:
-            waves["Wave 3 - Optimization"].append(finding["asset"])
+
+            waves[
+                "Wave 3 - Optimization"
+            ].append(
+                finding.get("asset")
+            )
+
 
     return waves
 
 
-def build_prompt(findings, remediation_plan):
+
+def build_prompt(
+    context,
+    remediation_plan
+):
+
+
+    pqc_findings = context.get(
+        "pqc_findings",
+        []
+    )
+
+
+    sonar_findings = context.get(
+        "sonarqube_findings",
+        []
+    )
+
+
     knowledge_context = []
 
-    for finding in findings:
-        risk = finding.get("risk")
 
-        # Skip safe algorithms
+
+    for finding in pqc_findings:
+
+
+        risk = finding.get(
+            "risk"
+        )
+
+
         if risk == "Low":
+
             continue
 
+
+
         query = (
+
             f"{finding['asset']} "
+
             f"{finding['category']} "
-            f"NIST migration guidance "
-            f"post quantum cryptography"
+
+            "NIST migration guidance "
+
+            "post quantum cryptography"
+
         )
 
-        evidence = retrieve_knowledge(query)
+
+
+        evidence = retrieve_knowledge(
+            query
+        )
+
+
 
         knowledge_context.append(
+
             {
-                "finding_id": finding["finding_id"],
-                "asset": finding["asset"],
-                "risk": finding["risk"],
-                "category": finding["category"],
-                "priority": finding["priority"],
-                "reason": finding["reason"],
-                "migration": finding["migration"],
-                "recommended_algorithm": finding["recommended_algorithm"],
-                "transition_strategy": finding["transition_strategy"],
-                "migration_wave": finding["migration_wave"],
-                "estimated_effort": finding["estimated_effort"],
-                "estimated_hours": finding["estimated_hours"],
-                "owner": finding["owner"],
-                "nist_reference": finding["nist_reference"],
-                "confidence": finding["confidence"],
-                "evidence": evidence,
+
+
+                "finding_id":
+                    finding.get(
+                        "finding_id"
+                    ),
+
+
+                "asset":
+                    finding.get(
+                        "asset"
+                    ),
+
+
+                "risk":
+                    finding.get(
+                        "risk"
+                    ),
+
+
+                "category":
+                    finding.get(
+                        "category"
+                    ),
+
+
+                "priority":
+                    finding.get(
+                        "priority"
+                    ),
+
+
+                "reason":
+                    finding.get(
+                        "reason"
+                    ),
+
+
+                "migration":
+                    finding.get(
+                        "migration"
+                    ),
+
+
+                "recommended_algorithm":
+                    finding.get(
+                        "recommended_algorithm"
+                    ),
+
+
+                "transition_strategy":
+                    finding.get(
+                        "transition_strategy"
+                    ),
+
+
+                "migration_wave":
+                    finding.get(
+                        "migration_wave"
+                    ),
+
+
+                "estimated_effort":
+                    finding.get(
+                        "estimated_effort"
+                    ),
+
+
+                "estimated_hours":
+                    finding.get(
+                        "estimated_hours"
+                    ),
+
+
+                "owner":
+                    finding.get(
+                        "owner"
+                    ),
+
+
+                "nist_reference":
+                    finding.get(
+                        "nist_reference"
+                    ),
+
+
+                "confidence":
+                    finding.get(
+                        "confidence"
+                    ),
+
+
+                "evidence":
+                    evidence,
+
             }
+
         )
 
-    readiness_score = calculate_readiness_score(findings)
-    migration_waves = generate_migration_waves(findings)
+
+
+    readiness_score = calculate_readiness_score(
+        pqc_findings
+    )
+
+
+    migration_waves = generate_migration_waves(
+        pqc_findings
+    )
+
+
 
     prompt = f"""
-You are a Senior Post Quantum Cryptography Security Engineer.
 
-Generate an enterprise security migration assessment.
+You are a Senior Application Security and
+Post Quantum Cryptography Security Engineer.
+
+
+Generate an enterprise security assessment.
+
 
 You have:
+
 1. CBOM cryptographic evidence
-2. Security rule engine findings
-3. NIST knowledge base evidence
-4. Remediation planning intelligence
+
+2. PQC migration rule findings
+
+3. SonarQube source code vulnerabilities
+
+4. SonarQube security hotspot findings
+
+5. NIST knowledge base evidence
+
+6. Remediation planning intelligence
+
+
 
 IMPORTANT RULES:
 
 - Only discuss algorithms present in findings.
-- Do not invent vulnerabilities.
-- Do not assume missing evidence.
-- Every recommendation must reference provided evidence.
-- If evidence is missing, explicitly state "No evidence available".
-- Do not create fake files, locations, or line numbers.
-- Migration recommendations must come from the remediation plan.
-- Migration roadmap must only use provided migration waves.
 
-Generate the report in this format:
+- Do not invent vulnerabilities.
+
+- Do not assume missing evidence.
+
+- Every recommendation must reference provided evidence.
+
+- If evidence is missing, explicitly state:
+  "No evidence available".
+
+- Do not create fake files or line numbers.
+
+- If SonarQube provides component and line,
+  include exact source location.
+
+- Explain relationship between code issue
+  and cryptographic risk.
+
+- Migration recommendations must come
+  from remediation plan.
+
+
+
+Generate report:
+
+
 
 # Quantum Security Assessment
+
+
 
 ## Quantum Readiness Score
 
 Score: {readiness_score}%
 
+
+
 ## Executive Summary
 
 Explain:
+
 - Current quantum readiness
+
 - Main cryptographic risks
+
+- Application security risks
+
 - Overall migration urgency
+
+
 
 ## Findings
 
-For every finding:
+
+
+For every PQC finding:
+
+
 
 ### Asset: <Asset Name>
 
+
 Finding ID:
+
 Risk:
+
 Category:
+
 Priority:
+
 Why it matters:
+
 Evidence:
-Reference only CBOM evidence provided.
+
 
 Migration Assessment:
+
 Current State:
+
 Target State:
+
 Migration Recommendation:
+
 Recommended Algorithm:
+
 Transition Strategy:
+
 Migration Wave:
+
 Estimated Effort:
+
 Estimated Hours:
+
 Owner:
+
 Confidence:
+
 Auto Fix Available:
+
+
+
+## Code Security Findings (SonarQube)
+
+
+
+For every Sonar finding:
+
+
+
+File:
+
+Line:
+
+Severity:
+
+Type:
+
+Rule:
+
+Message:
+
+
+Security Impact:
+
+
+Recommended Fix:
+
+
+
 
 ## NIST Guidance
 
+
 Use only retrieved NIST evidence.
 
-Mention:
-- FIPS references
-- Migration guidance
-- PQC standards
+
 
 ## Migration Roadmap
 
+
 Wave 1 - Immediate
+
 Critical and high-risk migrations.
 
+
+
 Wave 2 - High Priority
+
 Medium-risk improvements.
 
+
+
 Wave 3 - Optimization
+
 Long-term improvements.
+
+
+
 
 ## Limitations
 
+
 Explain:
+
 - Assessment scope
+
 - Evidence limitations
+
 - Unknown cryptographic assets
+
 - Implementation dependencies
 
-Security Data:
-{json.dumps(knowledge_context, indent=2)}
+
+
+
+PQC Security Data:
+
+{json.dumps(
+    knowledge_context,
+    indent=2
+)}
+
+
+
+SonarQube Findings:
+
+{json.dumps(
+    sonar_findings,
+    indent=2
+)}
+
+
 
 Remediation Plan:
-{json.dumps(remediation_plan, indent=2)}
+
+{json.dumps(
+    remediation_plan,
+    indent=2
+)}
+
+
 
 Migration Waves:
-{json.dumps(migration_waves, indent=2)}
+
+{json.dumps(
+    migration_waves,
+    indent=2
+)}
+
 """
+
 
     return prompt
 
 
+
 if __name__ == "__main__":
-    findings = load_findings()
+
+
+    context = load_security_context()
+
+
     remediation_plan = load_remediation_plan()
 
-    print(f"Analyzing {len(findings)} security findings...\n")
 
-    prompt = build_prompt(findings, remediation_plan)
-    response = ask_mistral(prompt)
 
-    print("\n===== AI SECURITY REPORT =====\n")
-    print(response)
+    pqc_findings = context.get(
+        "pqc_findings",
+        []
+    )
 
-    # Ensure output directory exists before writing
-    os.makedirs(os.path.dirname(REPORT_FILE), exist_ok=True)
-    with open(REPORT_FILE, "w") as f:
-        f.write(response)
 
-    print("\nSaved report:", REPORT_FILE)
+    sonar_findings = context.get(
+        "sonarqube_findings",
+        []
+    )
+
+
+
+    print(
+
+        f"Analyzing "
+        f"{len(pqc_findings)} PQC findings "
+        f"and "
+        f"{len(sonar_findings)} SonarQube findings..."
+
+    )
+
+
+
+    prompt = build_prompt(
+        context,
+        remediation_plan
+    )
+
+
+
+    response = ask_mistral(
+        prompt
+    )
+
+
+
+    print(
+        "\n===== AI SECURITY REPORT =====\n"
+    )
+
+
+    print(
+        response
+    )
+
+
+
+    os.makedirs(
+        "output",
+        exist_ok=True
+    )
+
+
+
+    with open(
+        REPORT_FILE,
+        "w"
+    ) as f:
+
+        f.write(
+            response
+        )
+
+
+
+    print(
+        "\nSaved report:",
+        REPORT_FILE
+    )
