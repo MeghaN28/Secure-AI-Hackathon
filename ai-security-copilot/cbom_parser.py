@@ -368,6 +368,8 @@ def analyze_cbom():
 
 if __name__ == "__main__":
 
+    import os
+
 
     findings = analyze_cbom()
 
@@ -384,7 +386,6 @@ if __name__ == "__main__":
 
 
     for finding in findings:
-
 
         print("\n--------------------------------")
 
@@ -405,12 +406,38 @@ if __name__ == "__main__":
 
         print(
             "Evidence Count:",
-            len(
-                finding["evidence"]
-            )
+            len(finding["evidence"])
         )
 
         print(
             "Migration:",
             finding["migration"]
         )
+
+
+    # Save output for next pipeline stage
+    os.makedirs(
+        "output",
+        exist_ok=True
+    )
+
+
+    output_file = "output/security_findings.json"
+
+
+    with open(
+        output_file,
+        "w"
+    ) as f:
+
+        json.dump(
+            findings,
+            f,
+            indent=4
+        )
+
+
+    print(
+        "\nSaved:",
+        output_file
+    )

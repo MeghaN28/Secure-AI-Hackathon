@@ -1,7 +1,9 @@
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+
+from embedding_config import EMBEDDING_MODEL_NAME
 
 print("Loading PDFs...")
 
@@ -19,8 +21,8 @@ chunks = splitter.split_documents(documents)
 
 print(f"Created {len(chunks)} chunks")
 
-embeddings = OllamaEmbeddings(
-    model="nomic-embed-text"
+embeddings = HuggingFaceEmbeddings(
+    model_name=EMBEDDING_MODEL_NAME
 )
 
 print("Creating vector database...")
