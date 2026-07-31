@@ -19,6 +19,7 @@ REMEDIATION_FILE = "output/remediation_plan.json"
 REPORT_FILE = "output/quantum_security_report.md"
 
 
+
 def load_json(path):
 
     with open(path, "r") as f:
@@ -50,14 +51,17 @@ def ask_mistral(prompt):
 
 
     if not api_key:
+
         raise ValueError(
             "MISTRAL_API_KEY is missing"
         )
 
 
+
     client = Mistral(
         api_key=api_key
     )
+
 
 
     response = client.chat.complete(
@@ -68,6 +72,7 @@ def ask_mistral(prompt):
 
             {
                 "role": "system",
+
                 "content": """
 
 You are a Senior Application Security Engineer
@@ -79,14 +84,17 @@ STRICT RULES:
 
 - Use only provided evidence.
 - Never invent vulnerabilities.
-- Never invent dates.
 - Never invent files or line numbers.
-- Never change calculated scores.
-- If evidence is missing say:
-  'No evidence available'.
+- Never invent cryptographic algorithms.
+- Never create fake NIST references.
+- Never modify the provided Quantum Readiness Score.
+- Copy the calculated score exactly.
+- If evidence is missing write:
+  "No evidence available."
 
 """
             },
+
 
             {
                 "role": "user",
@@ -102,29 +110,36 @@ STRICT RULES:
 
 
 
+
 def normalize_risk(value):
 
     if not value:
+
         return "LOW"
+
 
     return value.upper()
 
 
 
+
 def calculate_readiness_score(findings):
 
+
     if not findings:
+
         return 100
+
 
 
     score = 100
 
 
-    for finding in findings:
+    analyzed = set()
 
-        risk = normalize_risk(
-            finding.get("risk")
-        )
+
+
+    for finding in findings:
 
 
         algorithm = finding.get(
@@ -133,39 +148,60 @@ def calculate_readiness_score(findings):
         ).upper()
 
 
-        # Critical quantum/vulnerable algorithms
-        if any(x in algorithm for x in [
-            "RSA",
-            "RSA-OAEP",
-            "SHA1",
-            "MD5",
-            "3DES"
-        ]):
+
+        if algorithm in analyzed:
+
+            continue
+
+
+        analyzed.add(
+            algorithm
+        )
+
+
+
+        # Quantum vulnerable public key crypto
+
+        if "RSA-OAEP" in algorithm:
+
+            score -= 20
+
+
+        elif "RSA" in algorithm:
+
+            score -= 20
+
+
+
+        # Weak hashes
+
+        elif "MD5" in algorithm:
 
             score -= 15
 
 
-        elif risk == "HIGH":
+
+        elif "SHA1" in algorithm or "SHA-1" in algorithm:
 
             score -= 10
 
 
-        elif risk == "MEDIUM":
+
+        # Symmetric algorithms
+
+        elif "AES-128" in algorithm:
 
             score -= 5
 
 
-        elif risk == "LOW":
 
-            score -= 2
+        # PQC adoption
 
-
-
-        # Reward PQC adoption
-        if any(x in algorithm for x in [
-            "ML-KEM",
-            "ML-DSA"
-        ]):
+        elif (
+            "ML-KEM" in algorithm
+            or
+            "ML-DSA" in algorithm
+        ):
 
             score += 10
 
@@ -177,9 +213,13 @@ def calculate_readiness_score(findings):
     )
 
 
+
+
 def generate_migration_waves(findings):
 
+
     waves = {
+
 
         "Wave 1 - Immediate": [],
 
@@ -188,6 +228,7 @@ def generate_migration_waves(findings):
         "Wave 3 - Optimization": []
 
     }
+
 
 
     for finding in findings:
@@ -203,31 +244,39 @@ def generate_migration_waves(findings):
         )
 
 
+
         if risk in [
             "CRITICAL",
             "HIGH"
         ]:
+
 
             waves[
                 "Wave 1 - Immediate"
             ].append(asset)
 
 
+
         elif risk == "MEDIUM":
+
 
             waves[
                 "Wave 2 - High Priority"
             ].append(asset)
 
 
+
         else:
+
 
             waves[
                 "Wave 3 - Optimization"
             ].append(asset)
 
 
+
     return waves
+
 
 
 
@@ -249,12 +298,15 @@ def build_prompt(
     )
 
 
-    assessment_date = datetime.now().strftime(
+
+    assessment_date = datetime.utcnow().strftime(
         "%Y-%m-%d"
     )
 
 
+
     knowledge_context = []
+
 
 
     for finding in pqc_findings:
@@ -263,10 +315,6 @@ def build_prompt(
         risk = normalize_risk(
             finding.get("risk")
         )
-
-
-        if risk == "LOW":
-            continue
 
 
 
@@ -279,9 +327,11 @@ def build_prompt(
         )
 
 
+
         evidence = retrieve_knowledge(
             query
         )
+
 
 
         knowledge_context.append({
@@ -289,35 +339,44 @@ def build_prompt(
             "finding_id":
                 finding.get("finding_id"),
 
+
             "asset":
                 finding.get("asset"),
+
 
             "risk":
                 finding.get("risk"),
 
+
             "category":
                 finding.get("category"),
+
 
             "reason":
                 finding.get("reason"),
 
+
             "migration":
                 finding.get("migration"),
+
 
             "recommended_algorithm":
                 finding.get(
                     "recommended_algorithm"
                 ),
 
+
             "transition_strategy":
                 finding.get(
                     "transition_strategy"
                 ),
 
+
             "migration_wave":
                 finding.get(
                     "migration_wave"
                 ),
+
 
             "evidence":
                 evidence
@@ -329,6 +388,7 @@ def build_prompt(
     readiness_score = calculate_readiness_score(
         pqc_findings
     )
+
 
 
     migration_waves = generate_migration_waves(
@@ -344,8 +404,10 @@ Assessment Date:
 
 
 Prepared by:
+
 Senior Application Security &
 Post Quantum Cryptography Engineer
+
 
 
 Scope:
@@ -356,20 +418,23 @@ and migration readiness.
 
 
 
-IMPORTANT:
-
-The readiness score below is calculated by
-the security engine.
-
-Do not modify it.
+IMPORTANT SECURITY ENGINE OUTPUT:
 
 Quantum Readiness Score:
 
 {readiness_score}%
 
 
+Display this exact value.
 
-Generate report:
+DO NOT modify it.
+
+DO NOT recalculate it.
+
+
+
+Generate:
+
 
 
 # Quantum Security Assessment
@@ -379,19 +444,32 @@ Generate report:
 ## Executive Summary
 
 
-Explain:
+Include:
 
 - Current quantum readiness
-- Cryptographic risks
+- Main cryptographic risks
 - Application security risks
 - Migration urgency
+
+
+
+## Quantum Readiness Score
+
+
+Score:
+
+{readiness_score}%
+
+
+Explain the score using only provided findings.
 
 
 
 ## PQC Findings
 
 
-For every finding include:
+
+For every finding:
 
 
 Asset:
@@ -409,7 +487,7 @@ Why it matters:
 
 Evidence:
 
-Only use CBOM evidence.
+Use CBOM evidence only.
 
 
 
@@ -437,7 +515,8 @@ Confidence:
 ## SonarQube Code Security Findings
 
 
-For every finding include:
+
+For every Sonar finding:
 
 
 File:
@@ -455,11 +534,10 @@ Message:
 
 Security Impact:
 
-
 Recommended Fix:
 
 
-Use exact Sonar evidence only.
+Use exact SonarQube data only.
 
 
 
@@ -467,6 +545,10 @@ Use exact Sonar evidence only.
 
 
 Use retrieved knowledge only.
+
+If unavailable:
+
+"No NIST evidence available."
 
 
 
@@ -483,11 +565,11 @@ Use retrieved knowledge only.
 ## Limitations
 
 
-Explain:
+Include:
 
 - Assessment scope
 - Evidence limitations
-- Unknown crypto assets
+- Unknown cryptographic assets
 - Implementation dependencies
 
 
@@ -524,12 +606,16 @@ Remediation Plan:
 
 
 
+
 if __name__ == "__main__":
+
 
 
     context = load_security_context()
 
+
     remediation_plan = load_remediation_plan()
+
 
 
     pqc_findings = context.get(
@@ -544,12 +630,26 @@ if __name__ == "__main__":
     )
 
 
-    print(
-        f"Analyzing "
-        f"{len(pqc_findings)} PQC findings "
-        f"and "
-        f"{len(sonar_findings)} SonarQube findings"
+
+    score = calculate_readiness_score(
+        pqc_findings
     )
+
+
+
+    print(
+        f"Analyzing {len(pqc_findings)} PQC findings "
+        f"and {len(sonar_findings)} SonarQube findings"
+    )
+
+
+
+    print(
+        "Calculated Quantum Readiness Score:",
+        score,
+        "%"
+    )
+
 
 
     prompt = build_prompt(
@@ -558,9 +658,11 @@ if __name__ == "__main__":
     )
 
 
+
     report = ask_mistral(
         prompt
     )
+
 
 
     os.makedirs(
@@ -569,12 +671,14 @@ if __name__ == "__main__":
     )
 
 
+
     with open(
         REPORT_FILE,
         "w"
     ) as f:
 
         f.write(report)
+
 
 
     print(
