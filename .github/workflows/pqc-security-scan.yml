@@ -35,16 +35,10 @@ jobs:
           pip install --no-cache-dir -r requirements.txt
 
 
-      - name: Debug Mistral Installation
+      - name: Verify Mistral SDK
         run: |
           pip show mistralai
-          python3 -c "import mistralai; print(mistralai); print(mistralai.__file__)"
-          python3 -m pip list | grep mistral
-
-
-      - name: Verify Mistral Import
-        run: |
-          python3 -c "from mistralai import Mistral; print('Mistral SDK v1+ successfully loaded!')"
+          python3 -c "from mistralai import Mistral; print('Mistral SDK loaded successfully!')"
 
 
       - name: Run CBOM Security Analysis

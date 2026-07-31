@@ -5,5 +5,5 @@ langchain-huggingface
 sentence-transformers
 python-dotenv
 openai>=1.0.0
-mistralai>=1.0.0
+mistralai==1.0.2
 httpx>=0.27.0
