@@ -49,8 +49,8 @@ jobs:
         python3 remediation_engine.py
 
     - name: Generate AI Security Report
-  env:
-    MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-  run: |
-    cd ai-security-copilot
-    python3 agent.py
+      env:
+        MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      run: |
+        cd ai-security-copilot
+        python3 agent.py
