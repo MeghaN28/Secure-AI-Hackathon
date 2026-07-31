@@ -240,7 +240,7 @@ jobs:
           rm -rf vector_db
 
 
-          python3 ingest.py
+          python3 ingest_documents.py
 
 
 
