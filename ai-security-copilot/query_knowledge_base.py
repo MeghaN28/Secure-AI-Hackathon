@@ -1,8 +1,10 @@
-from langchain_ollama import OllamaEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
-embeddings = OllamaEmbeddings(
-    model="nomic-embed-text"
+from embedding_config import EMBEDDING_MODEL_NAME
+
+embeddings = HuggingFaceEmbeddings(
+    model_name=EMBEDDING_MODEL_NAME
 )
 
 db = Chroma(
