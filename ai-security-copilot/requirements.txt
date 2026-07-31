@@ -3,3 +3,4 @@ langchain-community
 langchain-ollama
 python-dotenv
 openai
+langchain_chroma
