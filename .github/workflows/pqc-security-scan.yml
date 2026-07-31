@@ -1,0 +1,50 @@
+name: PQC Security Scan
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+
+jobs:
+  pqc-scan:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+
+    - name: Install dependencies
+      run: |
+        pip install -r ai-security-copilot/requirements.txt
+
+
+    - name: Run CBOM Security Analysis
+      run: |
+        cd ai-security-copilot
+        python3 cbom_parser.py
+
+
+    - name: Run PQC Rule Engine
+      run: |
+        cd ai-security-copilot
+        python3 rule_engine.py
+
+
+    - name: Generate AI Security Report
+      run: |
+        cd ai-security-copilot
+        python3 agent.py
