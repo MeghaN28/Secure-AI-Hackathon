@@ -1,5 +1,6 @@
 name: PQC Security Scan
 
+
 on:
   pull_request:
     branches:
@@ -10,10 +11,17 @@ on:
       - "*"
 
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+
 jobs:
   pqc-scan:
 
     runs-on: ubuntu-latest
+
 
     defaults:
       run:
@@ -46,6 +54,7 @@ jobs:
       - name: Verify Mistral SDK
         run: |
           pip show mistralai
+
           python3 -c "from mistralai import Mistral; print('Mistral SDK loaded successfully!')"
 
 
@@ -77,25 +86,31 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quantum-security-report
-          path: ai-security-copilot/output/quantum_security_report.md
+          path: output/quantum_security_report.md
 
 
       - name: Comment Security Report on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
           script: |
             const fs = require('fs');
 
+
             const reportPath =
-              'ai-security-copilot/output/quantum_security_report.md';
+              'output/quantum_security_report.md';
 
 
             if (!fs.existsSync(reportPath)) {
+
               core.setFailed(
                 "Security report was not generated."
               );
+
               return;
+
             }
 
 
@@ -106,9 +121,14 @@ jobs:
 
 
             await github.rest.issues.createComment({
+
               owner: context.repo.owner,
+
               repo: context.repo.repo,
+
               issue_number: context.issue.number,
+
               body:
                 "## 🔐 PQC Security Assessment Report\n\n" + report
+
             });
