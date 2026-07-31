@@ -2,6 +2,7 @@ import json
 import os
 
 from rag_retriever import retrieve_knowledge
+from guardrails import GuardrailRunner
 
 try:
     from mistralai import Mistral
@@ -665,7 +666,41 @@ if __name__ == "__main__":
     )
 
 
+    # --- GUARDRAIL: Collect RAG evidence for validation ---
+    all_rag_evidence = []
+    for finding in pqc_findings:
+        if finding.get("risk") == "Low":
+            continue
+        query = (
+            f"{finding['asset']} "
+            f"{finding['category']} "
+            "NIST migration guidance "
+            "post quantum cryptography"
+        )
+        evidence = retrieve_knowledge(query)
+        all_rag_evidence.extend(evidence)
 
+
+    # --- GUARDRAIL 1: Pre-Generation (Prompt Injection) ---
+    print("\n🛡️  Running pre-generation guardrails...")
+    guardrails = GuardrailRunner(
+        pqc_findings=pqc_findings,
+        sonar_findings=sonar_findings,
+        rag_evidence=all_rag_evidence,
+    )
+    pre_result = guardrails.run_pre_generation()
+
+    if not pre_result["passed"]:
+        print(
+            f"⚠️  Prompt Injection detected: "
+            f"{pre_result['threat_count']} threat(s) found."
+        )
+        print(f"   Action: {pre_result['recommendation']}")
+    else:
+        print("✅ Pre-generation check passed (no injection threats).")
+
+
+    # --- Generate Report ---
     prompt = build_prompt(
         context,
         remediation_plan
@@ -678,7 +713,40 @@ if __name__ == "__main__":
     )
 
 
+    # --- GUARDRAIL 2 & 3: Post-Generation (Hallucination + Output) ---
+    print("\n🛡️  Running post-generation guardrails...")
+    post_result = guardrails.run_post_generation(response)
 
+    hallucination = post_result["hallucination_check"]
+    output_val = post_result["output_validation"]
+
+    if hallucination["passed"]:
+        print("✅ Hallucination check passed.")
+    else:
+        print(
+            f"⚠️  Hallucination issues: "
+            f"{hallucination['violation_count']} violation(s)"
+        )
+        for v in hallucination["violations"]:
+            print(f"   - [{v['severity'].upper()}] {v['detail']}")
+
+    if output_val["passed"]:
+        print("✅ Output validation passed.")
+    else:
+        print(
+            f"⚠️  Output issues: "
+            f"{output_val['violation_count']} violation(s)"
+        )
+        for v in output_val["violations"]:
+            print(f"   - [{v['severity'].upper()}] {v['detail']}")
+
+    print(
+        f"\n📊 Report completeness: {output_val['completeness_score']}%"
+    )
+    print(f"📊 Overall: {post_result['recommendation']}")
+
+
+    # --- Output ---
     print(
         "\n===== AI SECURITY REPORT =====\n"
     )
@@ -707,8 +775,13 @@ if __name__ == "__main__":
         )
 
 
+    # Save guardrail results alongside the report
+    guardrail_report = {
+        "pre_generation": pre_result,
+        "post_generation": post_result,
+    }
+    with open("output/guardrail_results.json", "w") as f:
+        json.dump(guardrail_report, f, indent=2, default=str)
 
-    print(
-        "\nSaved report:",
-        REPORT_FILE
-    )
+    print("\nSaved report:", REPORT_FILE)
+    print("Saved guardrail results: output/guardrail_results.json")
