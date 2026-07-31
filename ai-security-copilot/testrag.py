@@ -20,7 +20,7 @@ for query in queries:
         k=3
     )
 
-    print("\nRESULTS:")
+    print("\nRESULTS: abx : ")
 
     if not results:
         print("NO RESULTS")
