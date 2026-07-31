@@ -4,6 +4,7 @@ from datetime import datetime
 
 from rag_retriever import retrieve_knowledge
 
+
 try:
     from mistralai import Mistral
 
@@ -14,16 +15,29 @@ except ImportError as e:
     ) from e
 
 
-SECURITY_CONTEXT_FILE = "output/combined_security_context.json"
-REMEDIATION_FILE = "output/remediation_plan.json"
-REPORT_FILE = "output/quantum_security_report.md"
+
+SECURITY_CONTEXT_FILE = (
+    "output/combined_security_context.json"
+)
+
+REMEDIATION_FILE = (
+    "output/remediation_plan.json"
+)
+
+REPORT_FILE = (
+    "output/quantum_security_report.md"
+)
 
 
 
 def load_json(path):
 
-    with open(path, "r") as f:
-        return json.load(f)
+    with open(
+        path,
+        "r"
+    ) as file:
+
+        return json.load(file)
 
 
 
@@ -71,6 +85,7 @@ def ask_mistral(prompt):
         messages=[
 
             {
+
                 "role": "system",
 
                 "content": """
@@ -78,27 +93,83 @@ def ask_mistral(prompt):
 You are a Senior Application Security Engineer
 specializing in Post Quantum Cryptography.
 
-Generate enterprise security assessments.
 
-STRICT RULES:
+Your task is to generate an enterprise security
+assessment report.
 
-- Use only provided evidence.
+
+STRICT SECURITY RULES:
+
+
+1. Evidence Grounding
+
+- Use ONLY provided:
+  - CBOM findings
+  - SonarQube findings
+  - Remediation plan
+  - Retrieved NIST knowledge
+
+
+2. Hallucination Prevention
+
 - Never invent vulnerabilities.
-- Never invent files or line numbers.
-- Never invent cryptographic algorithms.
-- Never create fake NIST references.
-- Never modify the provided Quantum Readiness Score.
-- Copy the calculated score exactly.
-- If evidence is missing write:
-  "No evidence available."
+- Never invent algorithms.
+- Never invent files.
+- Never invent line numbers.
+- Never invent NIST references.
+- Never invent migration standards.
+
+
+3. NIST Rules
+
+- Only use NIST information from the provided
+  retrieval context.
+- If retrieval context is empty write:
+
+"No NIST evidence available."
+
+
+4. Score Rules
+
+- The Quantum Readiness Score is calculated
+  by the security engine.
+- Copy the provided score exactly.
+- Never recalculate or modify it.
+
+
+5. Evidence Rules
+
+If evidence is missing write:
+
+"No evidence available."
+
+
+6. SonarQube Rules
+
+Only use exact:
+- file names
+- line numbers
+- rules
+- severity
+- messages
+
+from SonarQube evidence.
+
+
+Generate professional enterprise security
+documentation.
 
 """
+
             },
 
 
             {
+
                 "role": "user",
+
                 "content": prompt
+
             }
 
         ]
@@ -106,8 +177,28 @@ STRICT RULES:
     )
 
 
-    return response.choices[0].message.content
+    return (
+        response
+        .choices[0]
+        .message
+        .content
+    )
 
+
+
+def normalize_algorithm(name):
+
+    if not name:
+
+        return ""
+
+    return (
+        name
+        .upper()
+        .replace("-", "")
+        .replace("_", "")
+        .replace(" ", "")
+    )
 
 
 
@@ -117,9 +208,7 @@ def normalize_risk(value):
 
         return "LOW"
 
-
     return value.upper()
-
 
 
 
@@ -142,16 +231,21 @@ def calculate_readiness_score(findings):
     for finding in findings:
 
 
-        algorithm = finding.get(
-            "asset",
-            ""
-        ).upper()
+        algorithm = normalize_algorithm(
+
+            finding.get(
+                "asset",
+                ""
+            )
+
+        )
 
 
 
         if algorithm in analyzed:
 
             continue
+
 
 
         analyzed.add(
@@ -162,12 +256,11 @@ def calculate_readiness_score(findings):
 
         # Quantum vulnerable public key crypto
 
-        if "RSA-OAEP" in algorithm:
-
-            score -= 20
-
-
-        elif "RSA" in algorithm:
+        if (
+            "RSAOAEP" in algorithm
+            or
+            algorithm == "RSA"
+        ):
 
             score -= 20
 
@@ -181,15 +274,15 @@ def calculate_readiness_score(findings):
 
 
 
-        elif "SHA1" in algorithm or "SHA-1" in algorithm:
+        elif "SHA1" in algorithm:
 
             score -= 10
 
 
 
-        # Symmetric algorithms
+        # Symmetric crypto
 
-        elif "AES-128" in algorithm:
+        elif "AES128" in algorithm:
 
             score -= 5
 
@@ -198,9 +291,9 @@ def calculate_readiness_score(findings):
         # PQC adoption
 
         elif (
-            "ML-KEM" in algorithm
+            "MLKEM" in algorithm
             or
-            "ML-DSA" in algorithm
+            "MLDSA" in algorithm
         ):
 
             score += 10
@@ -214,12 +307,10 @@ def calculate_readiness_score(findings):
 
 
 
-
 def generate_migration_waves(findings):
 
 
     waves = {
-
 
         "Wave 1 - Immediate": [],
 
@@ -240,20 +331,28 @@ def generate_migration_waves(findings):
 
 
         risk = normalize_risk(
-            finding.get("risk")
+
+            finding.get(
+                "risk"
+            )
+
         )
 
 
 
         if risk in [
+
             "CRITICAL",
             "HIGH"
+
         ]:
 
 
             waves[
                 "Wave 1 - Immediate"
-            ].append(asset)
+            ].append(
+                asset
+            )
 
 
 
@@ -262,7 +361,9 @@ def generate_migration_waves(findings):
 
             waves[
                 "Wave 2 - High Priority"
-            ].append(asset)
+            ].append(
+                asset
+            )
 
 
 
@@ -271,15 +372,13 @@ def generate_migration_waves(findings):
 
             waves[
                 "Wave 3 - Optimization"
-            ].append(asset)
+            ].append(
+                asset
+            )
 
 
 
     return waves
-
-
-
-
 def build_prompt(
     context,
     remediation_plan
@@ -305,59 +404,120 @@ def build_prompt(
 
 
 
-    knowledge_context = []
+    readiness_score = calculate_readiness_score(
+        pqc_findings
+    )
+
+
+
+    migration_waves = generate_migration_waves(
+        pqc_findings
+    )
+
+
+
+    pqc_context = []
+
+    nist_context = []
 
 
 
     for finding in pqc_findings:
 
 
-        risk = normalize_risk(
-            finding.get("risk")
+        asset = finding.get(
+            "asset",
+            ""
+        )
+
+
+        category = finding.get(
+            "category",
+            ""
         )
 
 
 
         query = (
 
-            f"{finding.get('asset')} "
-            f"{finding.get('category')} "
-            "NIST PQC migration guidance"
+            f"{asset} "
+            f"{category} "
+            "NIST FIPS PQC migration "
+            "replacement guidance"
 
         )
 
 
 
-        evidence = retrieve_knowledge(
+        retrieved = retrieve_knowledge(
             query
         )
 
 
 
-        knowledge_context.append({
+        if not retrieved:
+
+            retrieved = [
+
+                "No NIST evidence available."
+
+            ]
+
+
+
+        nist_context.append({
+
+            "algorithm":
+                asset,
+
+            "category":
+                category,
+
+            "retrieved_nist_guidance":
+                retrieved
+
+        })
+
+
+
+        pqc_context.append({
 
             "finding_id":
-                finding.get("finding_id"),
+                finding.get(
+                    "finding_id"
+                ),
 
 
             "asset":
-                finding.get("asset"),
+                asset,
 
 
             "risk":
-                finding.get("risk"),
+                finding.get(
+                    "risk"
+                ),
 
 
             "category":
-                finding.get("category"),
+                category,
+
+
+            "priority":
+                finding.get(
+                    "priority"
+                ),
 
 
             "reason":
-                finding.get("reason"),
+                finding.get(
+                    "reason"
+                ),
 
 
             "migration":
-                finding.get("migration"),
+                finding.get(
+                    "migration"
+                ),
 
 
             "recommended_algorithm":
@@ -379,31 +539,29 @@ def build_prompt(
 
 
             "evidence":
-                evidence
+                finding.get(
+                    "evidence",
+                    []
+                )
 
         })
 
 
 
-    readiness_score = calculate_readiness_score(
-        pqc_findings
-    )
-
-
-
-    migration_waves = generate_migration_waves(
-        pqc_findings
-    )
-
 
 
     prompt = f"""
 
+# Quantum Security Assessment
+
+
 Assessment Date:
+
 {assessment_date}
 
 
-Prepared by:
+
+Prepared By:
 
 Senior Application Security &
 Post Quantum Cryptography Engineer
@@ -420,6 +578,7 @@ and migration readiness.
 
 IMPORTANT SECURITY ENGINE OUTPUT:
 
+
 Quantum Readiness Score:
 
 {readiness_score}%
@@ -427,33 +586,29 @@ Quantum Readiness Score:
 
 Display this exact value.
 
-DO NOT modify it.
+DO NOT change it.
 
 DO NOT recalculate it.
 
 
 
-Generate:
+Generate the following report:
 
 
 
-# Quantum Security Assessment
-
-
-
-## Executive Summary
+# Executive Summary
 
 
 Include:
 
 - Current quantum readiness
-- Main cryptographic risks
+- Major cryptographic risks
 - Application security risks
 - Migration urgency
 
 
 
-## Quantum Readiness Score
+# Quantum Readiness Score
 
 
 Score:
@@ -461,15 +616,14 @@ Score:
 {readiness_score}%
 
 
-Explain the score using only provided findings.
+Explain only using provided findings.
 
 
 
-## PQC Findings
+# PQC Findings
 
 
-
-For every finding:
+For every cryptographic finding:
 
 
 Asset:
@@ -512,11 +666,10 @@ Confidence:
 
 
 
-## SonarQube Code Security Findings
+# SonarQube Code Security Findings
 
 
-
-For every Sonar finding:
+For every SonarQube finding:
 
 
 File:
@@ -537,22 +690,30 @@ Security Impact:
 Recommended Fix:
 
 
-Use exact SonarQube data only.
+Use only provided SonarQube data.
 
 
 
-## NIST Guidance
+# NIST Guidance
 
 
-Use retrieved knowledge only.
+IMPORTANT:
 
-If unavailable:
+Use ONLY the retrieved NIST knowledge below.
+
+
+Rules:
+
+- Do not create FIPS references.
+- Do not create SP references.
+- Do not use outside knowledge.
+- If missing write:
 
 "No NIST evidence available."
 
 
 
-## Migration Roadmap
+# Migration Roadmap
 
 
 {json.dumps(
@@ -562,7 +723,7 @@ If unavailable:
 
 
 
-## Limitations
+# Limitations
 
 
 Include:
@@ -574,16 +735,31 @@ Include:
 
 
 
+========================
+
 PQC Evidence:
 
 {json.dumps(
-    knowledge_context,
+    pqc_context,
     indent=2
 )}
 
 
 
-Sonar Evidence:
+========================
+
+Retrieved NIST Knowledge:
+
+{json.dumps(
+    nist_context,
+    indent=2
+)}
+
+
+
+========================
+
+SonarQube Evidence:
 
 {json.dumps(
     sonar_findings,
@@ -591,6 +767,8 @@ Sonar Evidence:
 )}
 
 
+
+========================
 
 Remediation Plan:
 
@@ -607,8 +785,8 @@ Remediation Plan:
 
 
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
 
 
     context = load_security_context()
@@ -631,6 +809,15 @@ if __name__ == "__main__":
 
 
 
+    print(
+        f"Analyzing "
+        f"{len(pqc_findings)} PQC findings "
+        f"and "
+        f"{len(sonar_findings)} SonarQube findings"
+    )
+
+
+
     score = calculate_readiness_score(
         pqc_findings
     )
@@ -638,14 +825,7 @@ if __name__ == "__main__":
 
 
     print(
-        f"Analyzing {len(pqc_findings)} PQC findings "
-        f"and {len(sonar_findings)} SonarQube findings"
-    )
-
-
-
-    print(
-        "Calculated Quantum Readiness Score:",
+        "Quantum Readiness Score:",
         score,
         "%"
     )
@@ -653,8 +833,11 @@ if __name__ == "__main__":
 
 
     prompt = build_prompt(
+
         context,
+
         remediation_plan
+
     )
 
 
@@ -675,9 +858,11 @@ if __name__ == "__main__":
     with open(
         REPORT_FILE,
         "w"
-    ) as f:
+    ) as file:
 
-        f.write(report)
+        file.write(
+            report
+        )
 
 
 
