@@ -113,56 +113,68 @@ def normalize_risk(value):
 
 def calculate_readiness_score(findings):
 
+    if not findings:
+        return 100
+
+
     score = 100
 
 
-    penalty = {
-
-        "CRITICAL": 35,
-
-        "HIGH": 20,
-
-        "MEDIUM": 10,
-
-        "LOW": 5
-
-    }
-
-
-    processed = set()
-
-
     for finding in findings:
-
-
-        asset = finding.get(
-            "asset"
-        )
-
-
-        if asset in processed:
-            continue
-
-
-        processed.add(asset)
-
 
         risk = normalize_risk(
             finding.get("risk")
         )
 
 
-        score -= penalty.get(
-            risk,
-            0
-        )
+        algorithm = finding.get(
+            "asset",
+            ""
+        ).upper()
+
+
+        # Critical quantum/vulnerable algorithms
+        if any(x in algorithm for x in [
+            "RSA",
+            "RSA-OAEP",
+            "SHA1",
+            "MD5",
+            "3DES"
+        ]):
+
+            score -= 15
+
+
+        elif risk == "HIGH":
+
+            score -= 10
+
+
+        elif risk == "MEDIUM":
+
+            score -= 5
+
+
+        elif risk == "LOW":
+
+            score -= 2
+
+
+
+        # Reward PQC adoption
+        if any(x in algorithm for x in [
+            "ML-KEM",
+            "ML-DSA"
+        ]):
+
+            score += 10
+
 
 
     return max(
-        score,
+        min(score,100),
         0
     )
-
 
 
 def generate_migration_waves(findings):
