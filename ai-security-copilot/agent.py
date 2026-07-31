@@ -2,6 +2,8 @@ import json
 import subprocess
 
 from rag_retriever import retrieve_knowledge
+from mistralai import Mistral
+import os
 
 
 FINDINGS_FILE = "output/security_findings.json"
@@ -20,17 +22,28 @@ def load_remediation_plan():
 
 
 def ask_ollama(prompt):
-    result = subprocess.run(
-        ["ollama", "run", "llama3.1"],
-        input=prompt,
-        text=True,
-        capture_output=True,
+
+    client = Mistral(
+        api_key=os.environ["MISTRAL_API_KEY"]
     )
 
-    if result.returncode != 0:
-        return result.stderr
 
-    return result.stdout
+    response = client.chat.complete(
+        model="mistral-small-latest",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a Senior Post Quantum Cryptography Security Engineer. Generate enterprise security migration assessments."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+
+    return response.choices[0].message.content
 
 
 def calculate_readiness_score(findings):
