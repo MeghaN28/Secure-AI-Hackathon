@@ -43,6 +43,10 @@ jobs:
         cd ai-security-copilot
         python3 rule_engine.py
 
+    - name: Generate Remediation Plan
+      run: |
+        cd ai-security-copilot
+        python3 remediation_engine.py
 
     - name: Generate AI Security Report
       run: |
