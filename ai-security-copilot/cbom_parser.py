@@ -1,139 +1,416 @@
 import json
 
 
+CBOM_FILE = "app-cbom-final.json"
+RULE_FILE = "pqc_rules.json"
+
+
 def load_json(file_path):
+
     with open(file_path, "r") as file:
         return json.load(file)
 
 
 
+def normalize_algorithm(name):
+
+    if not name:
+        return ""
+
+    name = name.upper()
+
+    replacements = {
+        "-": "",
+        "_": "",
+        " ": ""
+    }
+
+    for old, new in replacements.items():
+        name = name.replace(old, new)
+
+    return name
+
+
+
 def extract_algorithm(asset):
     """
-    Extract algorithm information from CycloneDX CBOM cryptoProperties
+    Extract algorithm from CycloneDX CBOM asset name.
     """
 
-    crypto = asset.get("cryptoProperties", {})
+    name = asset.get("name", "")
 
-    search_text = json.dumps(crypto).upper()
+    if not name:
+        return None
 
-    # Common crypto algorithms
-    algorithms = [
-        "RSA-OAEP",
-        "RSA",
-        "AES",
-        "AES-128",
-        "AES-256",
-        "SHA-1",
-        "SHA1",
-        "SHA-256",
-        "SHA256",
-        "MD5",
-        "DES",
-        "3DES",
-        "HMAC",
-        "ML-KEM",
-        "ML-DSA"
+
+    normalized = normalize_algorithm(name)
+
+
+    # IMPORTANT:
+    # Longer patterns first
+    # Otherwise AES128 matches AES128GCM first
+
+    algorithm_map = [
+
+        ("RSAOAEP", "RSA-OAEP"),
+
+        ("RSA2048", "RSA"),
+
+        ("AES256CBCPKCS5", "AES-256"),
+
+        ("AES256GCM", "AES-256"),
+
+        ("AES256", "AES-256"),
+
+        ("AES128GCM", "AES-128"),
+
+        ("AES128CBCPKCS5", "AES-128"),
+
+        ("AES128", "AES-128"),
+
+        ("SHA256", "SHA-256"),
+
+        ("SHA1", "SHA-1"),
+
+        ("HMACSHA1", "SHA-1"),
+
+        ("MD5", "MD5"),
+
+        ("3DES", "3DES"),
+
+        ("DES", "DES"),
+
+        ("MLKEM", "ML-KEM"),
+
+        ("MLDSA", "ML-DSA")
     ]
 
-    for algo in algorithms:
-        if algo in search_text:
-            return algo
 
-    # Handle key/material based detection
-    asset_type = (
-        crypto
-        .get("assetType", "")
-        .lower()
-    )
+    for pattern, algorithm in algorithm_map:
 
-    related = (
-        crypto
-        .get("relatedCryptoMaterialProperties", {})
-        .get("type", "")
-        .lower()
-    )
+        if pattern in normalized:
+            return algorithm
 
-    if "secret-key" in related:
-        return "AES"
-
-    if "public-key" in related:
-        return "RSA"
-
-    if "private-key" in related:
-        return "RSA"
-
-    if "message-digest" in related:
-        return "SHA-256"
 
     return None
 
 
-def extract_location(asset):
-    evidence = asset.get("evidence", {})
 
-    occurrences = evidence.get("occurrences", [])
+def extract_evidence(asset):
 
-    if occurrences:
-        occurrence = occurrences[0]
+    evidence = asset.get(
+        "evidence",
+        {}
+    )
 
-        return {
-            "file": occurrence.get("location"),
-            "line": occurrence.get("line")
-        }
-
-    return {
-        "file": "Unknown",
-        "line": None
-    }
+    occurrences = evidence.get(
+        "occurrences",
+        []
+    )
 
 
-def analyze_cbom(cbom_file, rules_file):
+    results = []
 
-    cbom = load_json(cbom_file)
-    rules = load_json(rules_file)
 
-    findings = []
+    for item in occurrences:
 
-    for asset in cbom.get("components", []):
+        results.append({
 
-        if asset.get("type") != "cryptographic-asset":
+            "location": item.get(
+                "location"
+            ),
+
+            "line": item.get(
+                "line"
+            ),
+
+            "context": item.get(
+                "additionalContext"
+            )
+
+        })
+
+
+    return results
+
+
+
+def build_rule_lookup(rules):
+
+    lookup = {}
+
+
+    for algorithm, rule in rules.items():
+
+        normalized = normalize_algorithm(
+            algorithm
+        )
+
+
+        lookup[normalized] = rule
+
+
+    # aliases without modifying JSON
+
+    if "SHA1" in lookup:
+
+        lookup["SHA-1"] = lookup["SHA1"]
+
+
+    if "SHA-1" in lookup:
+
+        lookup["SHA1"] = lookup["SHA-1"]
+
+
+    if "RSA2048" in lookup:
+
+        lookup["RSA"] = lookup["RSA2048"]
+
+
+    return lookup
+
+
+
+def analyze_cbom():
+
+    cbom = load_json(
+        CBOM_FILE
+    )
+
+    rules = load_json(
+        RULE_FILE
+    )
+
+
+    rules_lookup = build_rule_lookup(
+        rules
+    )
+
+
+    findings = {}
+
+
+
+    for asset in cbom.get(
+        "components",
+        []
+    ):
+
+
+        if asset.get(
+            "type"
+        ) != "cryptographic-asset":
+
             continue
 
-        algorithm = extract_algorithm(asset)
 
-        if algorithm and algorithm in rules:
 
-            finding = {
-                "asset": asset.get("name"),
-                "algorithm": algorithm,
-                "location": extract_location(asset),
-                "risk": rules[algorithm]["risk"],
-                "reason": rules[algorithm]["reason"],
-                "migration": rules[algorithm]["migration"],
-                "priority": rules[algorithm]["priority"]
+        algorithm = extract_algorithm(
+            asset
+        )
+
+
+        if not algorithm:
+            continue
+
+
+
+        normalized = normalize_algorithm(
+            algorithm
+        )
+
+
+        # Debug if needed
+        # print(asset.get("name"), "=>", algorithm, normalized)
+
+
+
+        if normalized not in rules_lookup:
+
+            continue
+
+
+
+        rule = rules_lookup[
+            normalized
+        ]
+
+
+
+        if normalized not in findings:
+
+
+            findings[normalized] = {
+
+
+                "finding_id":
+                    f"PQC-{normalized}-001",
+
+
+                "asset":
+                    algorithm,
+
+
+                "normalized_algorithm":
+                    normalized,
+
+
+                "risk":
+                    rule.get(
+                        "risk"
+                    ),
+
+
+                "category":
+                    rule.get(
+                        "category"
+                    ),
+
+
+                "priority":
+                    rule.get(
+                        "priority"
+                    ),
+
+
+                "reason":
+                    rule.get(
+                        "reason"
+                    ),
+
+
+                "migration":
+                    rule.get(
+                        "migration"
+                    ),
+
+
+                "recommended_algorithm":
+                    rule.get(
+                        "recommended_algorithm",
+                        []
+                    ),
+
+
+                "transition_strategy":
+                    rule.get(
+                        "transition_strategy",
+                        "Unknown"
+                    ),
+
+
+                "migration_wave":
+                    rule.get(
+                        "migration_wave",
+                        "Unknown"
+                    ),
+
+
+                "estimated_effort":
+                    rule.get(
+                        "estimated_effort",
+                        "Unknown"
+                    ),
+
+
+                "estimated_hours":
+                    rule.get(
+                        "estimated_hours",
+                        "Unknown"
+                    ),
+
+
+                "owner":
+                    rule.get(
+                        "owner",
+                        "Security Team"
+                    ),
+
+
+                "nist_reference":
+                    rule.get(
+                        "nist_reference",
+                        []
+                    ),
+
+
+                "confidence":
+                    rule.get(
+                        "confidence",
+                        "Medium"
+                    ),
+
+
+                "auto_fix":
+                    rule.get(
+                        "auto_fix",
+                        False
+                    ),
+
+
+                "evidence": []
+
             }
 
-            findings.append(finding)
 
-    return findings
+
+        findings[normalized]["evidence"].extend(
+            extract_evidence(asset)
+        )
+
+
+
+    return list(
+        findings.values()
+    )
+
 
 
 if __name__ == "__main__":
 
-    findings = analyze_cbom(
-        "app-cbom-final.json",
-        "pqc_rules.json"
+
+    findings = analyze_cbom()
+
+
+    print(
+        "\n===== PQC SECURITY FINDINGS =====\n"
     )
 
-    print("\n===== PQC SECURITY FINDINGS =====\n")
 
-    print(f"Total findings: {len(findings)}\n")
+    print(
+        "Total findings:",
+        len(findings)
+    )
 
-    for finding in findings[:10]:
 
-        print("--------------------------------")
-        print("Algorithm :", finding["algorithm"])
-        print("Risk      :", finding["risk"])
-        print("Location  :", finding["location"])
-        print("Reason    :", finding["reason"])
-        print("Migration :", finding["migration"])
+    for finding in findings:
+
+
+        print("\n--------------------------------")
+
+        print(
+            "Algorithm:",
+            finding["asset"]
+        )
+
+        print(
+            "Risk:",
+            finding["risk"]
+        )
+
+        print(
+            "Priority:",
+            finding["priority"]
+        )
+
+        print(
+            "Evidence Count:",
+            len(
+                finding["evidence"]
+            )
+        )
+
+        print(
+            "Migration:",
+            finding["migration"]
+        )

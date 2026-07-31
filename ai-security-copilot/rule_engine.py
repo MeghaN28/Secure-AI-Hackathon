@@ -89,27 +89,37 @@ def analyze_cbom(cbom, rules):
 
 
         if algorithm in normalized_rules:
-
             rule = normalized_rules[algorithm]
 
             findings.append({
-
                 "asset": raw_algorithm,
-
                 "normalized_algorithm": algorithm,
+                "risk": rule.get("risk"),
+                "category": rule.get("category"),
+                "priority": rule.get("priority"),
+                "reason": rule.get("reason"),
+                "migration": rule.get("migration"),
+                "finding_id": f"PQC-{algorithm}-{len(findings)+1:03d}",
 
-                "risk": rule["risk"],
+                # Migration Intelligence
+                "recommended_algorithm": rule.get("recommended_algorithm", []),
+                "transition_strategy": rule.get("transition_strategy", "Not specified"),
+                "migration_wave": rule.get("migration_wave", "Not specified"),
 
-                "category": rule["category"],
+                # Engineering Planning
+                "estimated_effort": rule.get("estimated_effort", "Unknown"),
+                "estimated_hours": rule.get("estimated_hours", "Unknown"),
+                "owner": rule.get("owner", "Security Team"),
 
-                "priority": rule["priority"],
+                # Compliance Evidence
+                "nist_reference": rule.get("nist_reference", []),
 
-                "reason": rule["reason"],
+                # Confidence
+                "confidence": rule.get("confidence", "Medium"),
+                "auto_fix": rule.get("auto_fix", False),
 
-                "migration": rule["migration"],
-
-                "evidence": extract_evidence(asset.get("evidence", {}))
-
+                # Code Evidence
+                "evidence": extract_evidence(asset.get("evidence", {})),
             })
 
 
