@@ -1,7 +1,20 @@
 import json
 import os
-from mistralai import Mistral
 from rag_retriever import retrieve_knowledge
+
+# Dual-compatibility import for mistralai SDK v1.0+ and legacy v0.x
+try:
+    from mistralai import Mistral
+    LEGACY_SDK = False
+except ImportError:
+    try:
+        from mistralai.client import MistralClient
+        LEGACY_SDK = True
+    except ImportError:
+        raise ImportError(
+            "The 'mistralai' package is missing or corrupted. "
+            "Ensure 'mistralai>=1.0.0' is installed."
+        )
 
 FINDINGS_FILE = "output/security_findings.json"
 REMEDIATION_FILE = "output/remediation_plan.json"
@@ -19,26 +32,34 @@ def load_remediation_plan():
 
 
 def ask_mistral(prompt: str) -> str:
-    """Queries Mistral AI API using the modern v1+ client."""
+    """Queries Mistral AI API supporting both modern Mistral v1+ and legacy v0.x SDKs."""
     api_key = os.getenv("MISTRAL_API_KEY")
     if not api_key:
         raise ValueError("Environment variable MISTRAL_API_KEY is not set.")
 
-    client = Mistral(api_key=api_key)
-
-    response = client.chat.complete(
-        model="mistral-small-latest",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a Senior Post Quantum Cryptography Security Engineer. "
-                    "Generate enterprise security migration assessments."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
+    system_content = (
+        "You are a Senior Post Quantum Cryptography Security Engineer. "
+        "Generate enterprise security migration assessments."
     )
+
+    if LEGACY_SDK:
+        client = MistralClient(api_key=api_key)
+        response = client.chat(
+            model="mistral-small-latest",
+            messages=[
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt},
+            ],
+        )
+    else:
+        client = Mistral(api_key=api_key)
+        response = client.chat.complete(
+            model="mistral-small-latest",
+            messages=[
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt},
+            ],
+        )
 
     return response.choices[0].message.content
 
