@@ -29,7 +29,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
-          pip install --no-cache-dir --upgrade "mistralai>=1.0.0"
+          pip install --no-cache-dir --force-reinstall --no-deps "mistralai>=1.0.0"
+
+      - name: Verify Mistral Import
+        run: python3 -c "from mistralai import Mistral; print('Mistral SDK v1+ successfully loaded!')"
 
       - name: Run CBOM Security Analysis
         run: python3 cbom_parser.py
