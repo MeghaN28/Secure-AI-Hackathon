@@ -82,13 +82,18 @@ jobs:
           python3 agent.py
 
 
+      - name: Security Score Gate
+        run: |
+          python3 security_gate.py
+
+
       - name: Upload Security Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
 
         with:
           name: quantum-security-report
-          path: ai-security-copilot/output/quantum_security_report.md
+          path: output/quantum_security_report.md
 
 
       - name: Comment Security Report on PR
@@ -104,7 +109,7 @@ jobs:
 
 
             const reportPath =
-              'ai-security-copilot/output/quantum_security_report.md';
+              'output/quantum_security_report.md';
 
 
             if (!fs.existsSync(reportPath)) {
