@@ -15,6 +15,7 @@ on:
     paths:
       # - "wrongsecrets/**"  # Old: submodule, can't track changes
       - "wrongsecrets_new/**"
+      - ".github/workflows/pqc-security-scan.yml"
 
   workflow_dispatch:
 
