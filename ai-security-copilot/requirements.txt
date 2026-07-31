@@ -1,6 +1,7 @@
 langchain
 langchain-community
-langchain-ollama
+langchain-chroma
+langchain-huggingface
+sentence-transformers
 python-dotenv
 openai
-langchain_chroma
