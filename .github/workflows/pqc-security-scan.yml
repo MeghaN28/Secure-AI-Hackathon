@@ -16,9 +16,7 @@ on:
 permissions:
 
   contents: read
-
   pull-requests: write
-
   issues: write
 
 
@@ -43,7 +41,6 @@ jobs:
     steps:
 
 
-
       # ==============================
       # CHECKOUT
       # ==============================
@@ -51,8 +48,6 @@ jobs:
       - name: Checkout repository
 
         uses: actions/checkout@v4
-
-
 
 
 
@@ -70,10 +65,8 @@ jobs:
 
 
 
-
-
       # ==============================
-      # CACHE HUGGINGFACE
+      # CACHE HUGGINGFACE MODELS
       # ==============================
 
       - name: Cache HuggingFace Models
@@ -92,30 +85,6 @@ jobs:
 
 
 
-
-
-      # ==============================
-      # CACHE CHROMA VECTOR DATABASE
-      # ==============================
-
-      - name: Cache Chroma Vector Database
-
-        uses: actions/cache@v4
-
-        with:
-
-          path: ./ai-security-copilot/vector_db
-
-          key: chroma-vector-db-v1
-
-          restore-keys: |
-
-            chroma-vector-db-
-
-
-
-
-
       # ==============================
       # INSTALL DEPENDENCIES
       # ==============================
@@ -126,36 +95,31 @@ jobs:
 
           python -m pip install --upgrade pip
 
-
           pip install --no-cache-dir -r requirements.txt
 
 
-          pip uninstall -y mistralai || true
-
-
-          pip install --no-cache-dir mistralai==1.0.2
-
-
-
-
 
       # ==============================
-      # VERIFY SDK
+      # VERIFY INSTALLATION
       # ==============================
 
-      - name: Verify Mistral SDK
+      - name: Verify Dependencies
 
         run: |
 
-          python3 -c "
+          python3 - <<EOF
 
+          import pypdf
+          import chromadb
+          import sentence_transformers
+
+          from langchain_chroma import Chroma
+          from langchain_huggingface import HuggingFaceEmbeddings
           from mistralai import Mistral
 
-          print('Mistral SDK loaded successfully!')
+          print("All dependencies loaded successfully")
 
-          "
-
-
+          EOF
 
 
 
@@ -171,8 +135,6 @@ jobs:
 
 
 
-
-
       # ==============================
       # SONARQUBE ANALYSIS
       # ==============================
@@ -182,8 +144,6 @@ jobs:
         run: |
 
           python3 sonarqube_parser.py
-
-
 
 
 
@@ -199,8 +159,6 @@ jobs:
 
 
 
-
-
       # ==============================
       # PQC RULE ENGINE
       # ==============================
@@ -210,8 +168,6 @@ jobs:
         run: |
 
           python3 rule_engine.py
-
-
 
 
 
@@ -227,8 +183,6 @@ jobs:
 
 
 
-
-
       # ==============================
       # RAG INGESTION
       # ==============================
@@ -239,10 +193,7 @@ jobs:
 
           rm -rf vector_db
 
-
           python3 ingest_documents.py
-
-
 
 
 
@@ -258,37 +209,44 @@ jobs:
 
 
 
-
-
       # ==============================
       # AI SECURITY AGENT
       # ==============================
 
       - name: Generate AI Security Report
 
-
         env:
-
 
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
-
           HF_HOME: ~/.cache/huggingface
 
-
           TRANSFORMERS_CACHE: ~/.cache/huggingface
-
 
           HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
 
 
-
         run: |
-
 
           python3 agent.py
 
 
+
+      # ==============================
+      # VERIFY REPORT
+      # ==============================
+
+      - name: Verify Generated Report
+
+        if: always()
+
+        run: |
+
+          ls -la output
+
+          test -f output/quantum_security_report.md
+
+          echo "Security report generated successfully"
 
 
 
@@ -298,22 +256,16 @@ jobs:
 
       - name: Upload Security Report Artifact
 
-
         if: always()
-
 
         uses: actions/upload-artifact@v4
 
 
         with:
 
-
           name: quantum-security-report
 
-
-          path: ai-security-copilot/output/quantum-security-report.md
-
-
+          path: ai-security-copilot/output/quantum_security_report.md
 
 
 
@@ -323,18 +275,14 @@ jobs:
 
       - name: Comment Security Report on PR
 
-
         if: github.event_name == 'pull_request'
-
 
         uses: actions/github-script@v7
 
 
         with:
 
-
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
 
 
           script: |
@@ -344,7 +292,14 @@ jobs:
 
 
             const reportPath =
-              'ai-security-copilot/output/quantum-security-report.md';
+              'ai-security-copilot/output/quantum_security_report.md';
+
+
+
+            console.log(
+              "Checking report:",
+              reportPath
+            );
 
 
 
@@ -368,6 +323,13 @@ jobs:
                 reportPath,
                 'utf8'
               );
+
+
+
+            console.log(
+              "Report size:",
+              report.length
+            );
 
 
 
