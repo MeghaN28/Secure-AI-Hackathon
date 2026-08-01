@@ -30,68 +30,6 @@ The primary flow in `ai-security-copilot/` performs the following steps:
 5. Generate a migration/remediation plan.
 6. Build an AI-generated report summarizing the quantum-readiness posture.
 
-## Quick Start
+> **Main Project & PR:** The primary implementation is located in the **`fea_guardrail_1`** branch. That branch contains the complete AI Security Copilot pipeline, GitHub Actions workflow, RAG integration, automated report generation, and the associated pull request with all major changes.
 
-### Prerequisites
 
-- Python 3.11+
-- `pip`
-- Access to a Mistral API key via GitHub Actions secret or local environment
-- Optional local model/runtime support for Ollama if you want to test the AI-driven workflow outside CI
-
-### Install Python Dependencies
-
-```bash
-cd ai-security-copilot
-pip install -r requirements.txt
-```
-
-### Run the Pipeline Locally
-
-```bash
-cd ai-security-copilot
-python3 cbom_parser.py
-python3 rule_engine.py
-python3 remediation_engine.py
-python3 agent.py
-```
-
-This produces the report and supporting artifacts in the `output/` directory.
-
-## CI Workflow
-
-The repository includes a GitHub Actions workflow at `.github/workflows/pqc-security-scan.yml` that runs the full scan automatically for pull requests and branch pushes.
-
-The workflow:
-
-- checks out the repository
-- sets up Python
-- installs dependencies
-- verifies the Mistral SDK
-- runs CBOM parsing and rule analysis
-- generates remediation guidance
-- creates the security assessment report
-- uploads the report as an artifact
-- comments the report on pull requests
-
-## Outputs
-
-Key generated outputs are stored under `ai-security-copilot/output/`:
-
-- `security_findings.json`
-- `remediation_plan.json`
-- `quantum_security_report.md`
-
-## Security Focus
-
-This project is designed to help teams:
-
-- inventory cryptographic dependencies from CBOM data
-- identify algorithms that are not quantum-safe
-- prioritize migration effort by risk and timeline
-- generate actionable remediation recommendations
-- capture evidence for governance and engineering review
-
-## Notes
-
-This workspace is intentionally heterogeneous and combines scanning, policy, planning, and demonstration components. The main operational pipeline is centered in `ai-security-copilot/`, while the other directories provide supporting toolchains, scanners, and reference workloads.
