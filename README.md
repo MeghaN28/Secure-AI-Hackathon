@@ -15,7 +15,7 @@ The project combines:
 - `cbom-reports/` — generated or curated CBOM artifacts used for analysis.
 - `cbomkit-theia/` — Go-based CBOM tooling and related scanner components.
 - `sonar-cryptography/` — cryptography-focused rules, engine components, and plugin logic.
-- `wrongsecrets/` — intentionally vulnerable reference application used for security experimentation.
+- `wrongsecrets/` — intentionally vulnerable reference application used for security experimentation - https://github.com/OWASP/wrongsecrets
 - `sonarqube/` — local SonarQube installation and supporting runtime components.
 - `.github/workflows/pqc-security-scan.yml` — CI workflow that runs the PQC scan pipeline on pull requests and pushes.
 
