@@ -120,6 +120,8 @@ def calculate_readiness_score(findings):
 
     analyzed_assets = set()
 
+    total_penalty = 0
+
 
     for finding in findings:
 
@@ -145,11 +147,24 @@ def calculate_readiness_score(findings):
         )
 
 
-        score -= severity_penalty.get(
+        total_penalty += severity_penalty.get(
             risk,
             0
         )
 
+
+    # Scale penalty: cap max deduction at 80 points so score
+    # reflects readiness rather than just count of findings.
+    # A fully vulnerable codebase still retains a non-zero score
+    # to indicate the assessment itself completed.
+    num_assets = len(analyzed_assets) if analyzed_assets else 1
+    max_possible_penalty = num_assets * 30  # worst case: all Critical
+    if max_possible_penalty > 0:
+        normalized_penalty = (total_penalty / max_possible_penalty) * 80
+    else:
+        normalized_penalty = 0
+
+    score = round(score - normalized_penalty)
 
     return max(
         score,
