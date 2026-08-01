@@ -9,6 +9,9 @@ The project combines:
 - supporting tooling for cryptography rule validation and remediation generation
 - sample applications and security labs used for vulnerability and migration demonstrations
 
+> **Main Project & PR:** The primary implementation is located in the **`fea_guardrail_1`** branch. That branch contains the complete AI Security Copilot pipeline, GitHub Actions workflow, RAG integration, automated report generation, and the associated pull request with all major changes.
+And the PR to be looked at is : https://github.com/MeghaN28/Secure-AI-Hackathon/pull/4
+
 ## Repository Structure
 
 - `ai-security-copilot/` — main Python workflow for CBOM parsing, rule evaluation, remediation planning, and AI-powered report generation.
@@ -30,6 +33,5 @@ The primary flow in `ai-security-copilot/` performs the following steps:
 5. Generate a migration/remediation plan.
 6. Build an AI-generated report summarizing the quantum-readiness posture.
 
-> **Main Project & PR:** The primary implementation is located in the **`fea_guardrail_1`** branch. That branch contains the complete AI Security Copilot pipeline, GitHub Actions workflow, RAG integration, automated report generation, and the associated pull request with all major changes.
-And the PR to be looked at is : https://github.com/MeghaN28/Secure-AI-Hackathon/pull/4
+
 
