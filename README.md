@@ -1,6 +1,6 @@
 # PQC Security Assessment Workspace
 
-An AI-powered security engineering platform for post-quantum cryptography (PQC) readiness assessment. It combines CBOM analysis, SonarQube integration, NIST knowledge retrieval (RAG), and LLM-driven report generation with built-in AI guardrails.
+An AI-powered security engineering platform for post-quantum cryptography (PQC) readiness assessment. It combines CBOM analysis, SonarQube integration, NIST knowledge retrieval (RAG), and LLM-driven report generation with built-in AI guardrails. 
 
 ## Architecture
 
