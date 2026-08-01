@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-Shield Agent  PQC Security Assessment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0e1a;
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        .slide {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 80px;
+            position: relative;
+            overflow: hidden;
+        }
+        /* ===== HERO ===== */
+        .slide-hero {
+            background: linear-gradient(135deg, #0a0e1a 0%, #1a1f3a 50%, #0d1525 100%);
+            text-align: center;
+        }
+        .slide-hero::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(ellipse at center, rgba(59,130,246,0.08) 0%, transparent 70%);
+            animation: pulse 8s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%,100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+        .shield-icon { width: 100px; height: 100px; margin-bottom: 32px; position: relative; z-index: 1; }
+        .shield-icon svg { width: 100%; height: 100%; filter: drop-shadow(0 0 30px rgba(59,130,246,0.4)); }
+        .hero-title {
+            font-size: 4.2rem; font-weight: 700; letter-spacing: -1px; margin-bottom: 14px;
+            position: relative; z-index: 1;
+            background: linear-gradient(135deg, #ffffff 0%, #93c5fd 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .hero-subtitle { font-size: 1.4rem; color: #94a3b8; font-weight: 300; margin-bottom: 20px; position: relative; z-index: 1; }
+        .hero-tagline { font-size: 1rem; color: #64748b; max-width: 650px; line-height: 1.7; position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+<!-- Continuing styles in a new style block -->
+<style>
+        /* ===== COMMON ===== */
+        .slide-title { font-size: 2.6rem; font-weight: 700; margin-bottom: 16px; text-align: center; color: #f1f5f9; }
+        .slide-subtitle { font-size: 1.05rem; color: #64748b; text-align: center; max-width: 700px; margin-bottom: 48px; line-height: 1.6; }
+        .badge-row { display: flex; gap: 12px; margin-top: 32px; position: relative; z-index: 1; flex-wrap: wrap; justify-content: center; }
+        .badge { padding: 8px 18px; border-radius: 20px; font-size: 0.82rem; font-weight: 500; border: 1px solid rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); color: #93c5fd; }
+
+        /* ===== PROBLEM ===== */
+        .slide-problem { background: linear-gradient(180deg, #0d1525 0%, #111827 100%); }
+        .problem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 28px; max-width: 1100px; width: 100%; }
+        .problem-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 32px 24px; text-align: center; transition: transform 0.3s; }
+        .problem-card:hover { transform: translateY(-4px); border-color: rgba(239,68,68,0.3); }
+        .problem-icon { font-size: 2.4rem; margin-bottom: 16px; }
+        .problem-card h3 { font-size: 1.05rem; margin-bottom: 10px; color: #f87171; }
+        .problem-card p { font-size: 0.87rem; color: #94a3b8; line-height: 1.6; }
+
+        /* ===== TARGET USER ===== */
+        .slide-user { background: linear-gradient(180deg, #111827 0%, #0f172a 100%); }
+        .user-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 24px; max-width: 900px; width: 100%; }
+        .user-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 24px; display: flex; align-items: flex-start; gap: 16px; }
+        .user-icon { font-size: 1.8rem; flex-shrink: 0; }
+        .user-card h3 { font-size: 1rem; color: #e2e8f0; margin-bottom: 6px; }
+        .user-card p { font-size: 0.85rem; color: #94a3b8; line-height: 1.5; }
+
+        /* ===== SOLUTION ===== */
+        .slide-solution { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); }
+        .solution-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; max-width: 1050px; width: 100%; align-items: start; }
+        .solution-left h3 { font-size: 1.15rem; color: #60a5fa; margin-bottom: 14px; }
+        .solution-left p { font-size: 0.9rem; color: #94a3b8; line-height: 1.7; margin-bottom: 18px; }
+        .solution-list { list-style: none; padding: 0; }
+        .solution-list li { font-size: 0.88rem; color: #cbd5e1; padding: 8px 0 8px 22px; position: relative; }
+        .solution-list li::before { content: '→'; position: absolute; left: 0; color: #3b82f6; }
+        .solution-right { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px; }
+        .solution-right h4 { font-size: 0.9rem; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+        .tech-tag { display: inline-block; margin: 4px 6px 4px 0; padding: 5px 12px; border-radius: 6px; font-size: 0.78rem; background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+</style>
+<style>
+        /* ===== DATA FLOW ===== */
+        .slide-dataflow { background: linear-gradient(180deg, #111827 0%, #0a0e1a 100%); }
+        .flow-container { max-width: 850px; width: 100%; }
+        .flow-step { display: flex; align-items: center; gap: 20px; padding: 16px 0; position: relative; }
+        .flow-step::before { content: ''; position: absolute; left: 23px; top: 50px; bottom: -16px; width: 2px; background: linear-gradient(180deg, #3b82f6 0%, rgba(59,130,246,0.1) 100%); }
+        .flow-step:last-child::before { display: none; }
+        .flow-num { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #1e40af, #3b82f6); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; flex-shrink: 0; box-shadow: 0 0 16px rgba(59,130,246,0.3); }
+        .flow-content h3 { font-size: 1.05rem; color: #e2e8f0; margin-bottom: 4px; }
+        .flow-content p { font-size: 0.85rem; color: #64748b; }
+        .flow-tag { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+
+        /* ===== SAFETY ===== */
+        .slide-safety { background: linear-gradient(180deg, #0a0e1a 0%, #0f172a 100%); }
+        .safety-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; max-width: 1100px; width: 100%; }
+        .safety-card { background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 32px 24px; position: relative; overflow: hidden; }
+        .safety-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .safety-card:nth-child(1)::before { background: linear-gradient(90deg, #f59e0b, #f97316); }
+        .safety-card:nth-child(2)::before { background: linear-gradient(90deg, #3b82f6, #6366f1); }
+        .safety-card:nth-child(3)::before { background: linear-gradient(90deg, #10b981, #14b8a6); }
+        .safety-card h3 { font-size: 1.05rem; margin-bottom: 12px; color: #f1f5f9; }
+        .safety-card p { font-size: 0.85rem; color: #94a3b8; line-height: 1.7; margin-bottom: 14px; }
+        .safety-checks { list-style: none; padding: 0; }
+        .safety-checks li { font-size: 0.8rem; color: #64748b; padding: 3px 0 3px 18px; position: relative; }
+        .safety-checks li::before { content: '✓'; position: absolute; left: 0; color: #34d399; font-weight: 700; }
+
+        /* ===== RESULT ===== */
+        .slide-result { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); }
+        .result-container { max-width: 880px; width: 100%; background: #1e293b; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.4); }
+        .result-header { background: #0f172a; padding: 12px 20px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .result-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .result-dot:nth-child(1) { background: #ef4444; }
+        .result-dot:nth-child(2) { background: #f59e0b; }
+        .result-dot:nth-child(3) { background: #22c55e; }
+        .result-title-bar { margin-left: 12px; font-size: 0.78rem; color: #64748b; }
+        .result-body { padding: 24px; font-family: 'JetBrains Mono','Fira Code',monospace; font-size: 0.8rem; line-height: 1.8; color: #94a3b8; }
+        .result-body .hl { color: #60a5fa; } .result-body .ok { color: #34d399; } .result-body .warn { color: #fbbf24; } .result-body .lb { color: #f1f5f9; font-weight: 600; }
+        .result-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+        .result-table th,.result-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.78rem; }
+        .result-table th { color: #64748b; font-weight: 500; }
+</style>
+<style>
+        /* ===== LIMITATIONS ===== */
+        .slide-limits { background: linear-gradient(180deg, #111827 0%, #0a0e1a 100%); }
+        .limits-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 20px; max-width: 900px; width: 100%; }
+        .limit-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 24px 20px; display: flex; align-items: flex-start; gap: 14px; }
+        .limit-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+        .limit-card h3 { font-size: 0.95rem; color: #fbbf24; margin-bottom: 6px; }
+        .limit-card p { font-size: 0.83rem; color: #94a3b8; line-height: 1.5; }
+
+        /* ===== NAV ===== */
+        .nav-dots { position: fixed; right: 28px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100; }
+        .nav-dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.2); cursor: pointer; transition: background 0.3s, transform 0.3s; }
+        .nav-dot:hover,.nav-dot.active { background: #3b82f6; transform: scale(1.4); }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 768px) {
+            .slide { padding: 40px 20px; }
+            .hero-title { font-size: 2.6rem; }
+            .problem-grid,.safety-cards { grid-template-columns: 1fr; }
+            .user-grid,.limits-grid,.solution-cols { grid-template-columns: 1fr; }
+            .nav-dots { display: none; }
+        }
+</style>
+
+<!-- NAV DOTS -->
+<div class="nav-dots">
+    <div class="nav-dot active" onclick="scrollToSlide(0)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(1)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(2)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(3)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(4)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(5)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(6)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(7)"></div>
+    <div class="nav-dot" onclick="scrollToSlide(8)"></div>
+</div>
+
+<!-- ============ SLIDE 1: HERO ============ -->
+<section class="slide slide-hero">
+    <div class="shield-icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L3 7V12C3 17.55 6.84 22.74 12 24C17.16 22.74 21 17.55 21 12V7L12 2Z" fill="url(#sg)" stroke="#60a5fa" stroke-width="0.5"/>
+            <path d="M10 15.5L7.5 13L6.09 14.41L10 18.33L18 10.33L16.59 8.92L10 15.5Z" fill="#fff"/>
+            <defs><linearGradient id="sg" x1="3" y1="2" x2="21" y2="24"><stop offset="0%" stop-color="#1e40af"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient></defs>
+        </svg>
+    </div>
+    <h1 class="hero-title">Q-Shield Agent</h1>
+    <p class="hero-subtitle">AI-Powered Post-Quantum Cryptography Security Assessment</p>
+    <p class="hero-tagline">
+        Automated detection of quantum-vulnerable cryptography with NIST-backed guidance, 
+        LLM-driven reporting, built-in AI guardrails, and CI/CD-native PR integration.
+    </p>
+    <div class="badge-row">
+        <span class="badge">CBOM Analysis</span>
+        <span class="badge">RAG + LLM</span>
+        <span class="badge">AI Guardrails</span>
+        <span class="badge">GitHub Actions</span>
+        <span class="badge">NIST Compliant</span>
+    </div>
+
+    <div style="margin-top: 48px; text-align: center; position: relative; z-index: 1;">
+        <div style="font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;">Team 1 &nbsp;|&nbsp; Theme: Security Reasoning Agent</div>
+        <div style="font-size: 0.95rem; color: #cbd5e1; line-height: 1.8;">
+            Megha Narendra Simha &nbsp;·&nbsp; Sai Shruthi Sridhar &nbsp;·&nbsp; Poorrnima Palanisamy Vetrivelan
+        </div>
+    </div>
+</section>
+
+<!-- ============ SLIDE 2: PROBLEM ============ -->
+<section class="slide slide-problem">
+    <h2 class="slide-title">The Problem</h2>
+    <p class="slide-subtitle">Quantum computers will break widely-used cryptography. Most organizations aren't ready  and don't even know what's at risk.</p>
+    <div class="problem-grid">
+        <div class="problem-card">
+            <div class="problem-icon">⚛️</div>
+            <h3>Quantum Breaks Crypto</h3>
+            <p>Shor's algorithm will break RSA, ECDSA, and Diffie-Hellman. "Harvest now, decrypt later" attacks are already happening today.</p>
+        </div>
+        <div class="problem-card">
+            <div class="problem-icon">🔍</div>
+            <h3>No Visibility</h3>
+            <p>Teams don't know which algorithms are embedded in their codebases. Manual audits are slow, incomplete, and don't scale across repositories.</p>
+        </div>
+        <div class="problem-card">
+            <div class="problem-icon">📋</div>
+            <h3>Complex Migration</h3>
+            <p>NIST has published PQC standards (FIPS 203, 204) but translating them into prioritized engineering plans requires deep expertise most teams lack.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ============ SLIDE 3: TARGET USER ============ -->
+<section class="slide slide-user">
+    <h2 class="slide-title">Target Users</h2>
+    <p class="slide-subtitle">Built for security and engineering teams responsible for cryptographic risk management.</p>
+    <div class="user-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="user-card">
+            <div class="user-icon">🔒</div>
+            <div>
+                <h3>Application Security Engineers</h3>
+                <ul style="list-style: disc; padding-left: 16px; margin: 0;">
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Inventory cryptographic assets</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Assess PQC readiness</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Produce governance evidence for compliance</li>
+                </ul>
+            </div>
+        </div>
+        <div class="user-card">
+            <div class="user-icon">👩‍💻</div>
+            <div>
+                <h3>Development Teams</h3>
+                <ul style="list-style: disc; padding-left: 16px; margin: 0;">
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Clear, actionable migration recommendations</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Integrated into existing CI/CD workflow</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">No context switching required</li>
+                </ul>
+            </div>
+        </div>
+        <div class="user-card">
+            <div class="user-icon">🏛️</div>
+            <div>
+                <h3>Governance &amp; Compliance Officers</h3>
+                <ul style="list-style: disc; padding-left: 16px; margin: 0;">
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Executive-level quantum readiness scores</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">Risk prioritization by wave</li>
+                    <li style="font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">NIST-referenced audit artifacts</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============ SLIDE 4: SOLUTION ============ -->
+<section class="slide slide-solution">
+    <h2 class="slide-title">Solution</h2>
+    <p class="slide-subtitle">End-to-end automated quantum security assessment  from code to compliance.</p>
+
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 1000px; width: 100%; margin-bottom: 48px;">
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">🔬</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Scan</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">Automatically inventories cryptographic assets from CBOM and SonarQube</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">⚠️</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Detect</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">Identifies quantum-vulnerable algorithms like RSA, SHA-1, MD5, AES-128</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">📚</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Retrieve</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">RAG knowledge base built from NIST FIPS 203, 204, and SP 1800-38B</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">🤖</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Assess</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">AI agent generates contextual security assessments grounded in evidence</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">🗺️</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Prioritize</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">Migration recommendations, remediation plans, and quantum readiness scores</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 28px 20px; text-align: center;">
+            <div style="font-size: 2.4rem; margin-bottom: 12px;">📋</div>
+            <div style="font-size: 0.95rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px;">Deliver</div>
+            <div style="font-size: 0.82rem; color: #94a3b8; line-height: 1.5;">Enterprise-ready reports validated by guardrails, posted directly to PR</div>
+        </div>
+    </div>
+
+    <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); border-radius: 10px; padding: 18px 28px; text-align: center; max-width: 700px;">
+        <p style="font-size: 1.05rem; color: #93c5fd; font-weight: 600; margin: 0;">
+            Automated, evidence-based quantum security assessments  delivered in your pull request.
+        </p>
+    </div>
+</section>
+
+<!-- ============ SLIDE 5: DATA FLOW ============ -->
+<section class="slide slide-dataflow">
+    <h2 class="slide-title">Data Flow &amp; Architecture</h2>
+    <p class="slide-subtitle">Every step is automated in CI  triggered on every pull request.</p>
+    <img src="ArchTech_image.jpeg" alt="Q-Shield Agent System Architecture" style="max-width: 100%; max-height: 75vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.08);">
+</section>
+
+<!-- ============ SLIDE 6: SAFETY / TRUST ============ -->
+<section class="slide slide-safety">
+    <h2 class="slide-title">Trust &amp; Safety Features</h2>
+    <p class="slide-subtitle">AI guardrails ensure the generated report is accurate, safe, and structurally complete.</p>
+    <div class="safety-cards">
+        <div class="safety-card">
+            <h3>🛡️ Prompt Injection Protection</h3>
+            <p>Scans all inputs (RAG docs, SonarQube data, CBOM) before they reach the LLM.</p>
+            <ul class="safety-checks">
+                <li>Instruction override detection</li>
+                <li>Role manipulation patterns</li>
+                <li>Data exfiltration attempts</li>
+                <li>Delimiter injection attacks</li>
+                <li>Auto-sanitization of threats</li>
+            </ul>
+        </div>
+        <div class="safety-card">
+            <h3>🔬 Hallucination Detection</h3>
+            <p>Verifies every claim in the report against source evidence  nothing is taken on faith.</p>
+            <ul class="safety-checks">
+                <li>Algorithm existence vs CBOM</li>
+                <li>NIST reference verification</li>
+                <li>File path &amp; line cross-check</li>
+                <li>Risk level consistency</li>
+                <li>Finding ID validation</li>
+            </ul>
+        </div>
+        <div class="safety-card">
+            <h3>📋 Output Validation</h3>
+            <p>Ensures the report meets structural requirements and contains no fabricated content.</p>
+            <ul class="safety-checks">
+                <li>Required section presence</li>
+                <li>Fabricated reference detection</li>
+                <li>LLM refusal pattern detection</li>
+                <li>Finding coverage completeness</li>
+                <li>Score range validation</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<!-- ============ SLIDE 7: PRACTICAL RESULT ============ -->
+<section class="slide slide-result" style="padding: 40px 60px;">
+    <h2 class="slide-title">Practical Result</h2>
+    <p class="slide-subtitle">What developers and reviewers see on every pull request.</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1100px; width: 100%;">
+        <img src="screenshot_1.png" alt="Result Screenshot 1" style="width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+        <img src="screenshot_2.png" alt="Result Screenshot 2" style="width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+        <img src="screenshot_3.png" alt="Result Screenshot 3" style="width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+        <img src="screenshot_4.png" alt="Result Screenshot 4" style="width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+    </div>
+</section>
+
+<!-- ============ SLIDE: ANTICIPATED QUESTIONS ============ -->
+<section class="slide slide-limits" style="background: linear-gradient(180deg, #0f172a 0%, #111827 100%);">
+    <h2 class="slide-title">Anticipated Questions</h2>
+    <p class="slide-subtitle">Addressing key questions about Q-Shield Agent's value and differentiation.</p>
+    <div class="limits-grid" style="grid-template-columns: 1fr; max-width: 900px;">
+        <div class="limit-card" style="flex-direction: column; gap: 12px;">
+            <h3 style="color: #60a5fa; font-size: 1.05rem;">❓ When we already have a GitHub workflow, what is the use of the agent?</h3>
+            <p style="font-size: 0.92rem; color: #93c5fd; font-weight: 600; margin-bottom: 8px; background: rgba(59,130,246,0.1); padding: 6px 12px; border-radius: 6px; display: inline-block;">The workflow is infrastructure; the agent is intelligence.</p>
+            <ul style="list-style: disc; padding-left: 20px; margin: 0;">
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Workflow orchestrates steps  cannot reason or correlate</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Agent synthesizes findings into actionable narrative</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Self-validates output through guardrails</li>
+            </ul>
+        </div>
+        <div class="limit-card" style="flex-direction: column; gap: 12px;">
+            <h3 style="color: #60a5fa; font-size: 1.05rem;">❓ Won't GitHub Copilot do the same thing?</h3>
+            <p style="font-size: 0.92rem; color: #93c5fd; font-weight: 600; margin-bottom: 8px; background: rgba(59,130,246,0.1); padding: 6px 12px; border-radius: 6px; display: inline-block;">Copilot is a generalist with no access to your security context.</p>
+            <ul style="list-style: disc; padding-left: 20px; margin: 0;">
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">No CBOM, SonarQube, or PQC rule ingestion</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">No RAG retrieval from NIST standards</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Cannot produce governance artifacts (scores, waves, compliance)</li>
+            </ul>
+        </div>
+        <div class="limit-card" style="flex-direction: column; gap: 12px;">
+            <h3 style="color: #60a5fa; font-size: 1.05rem;">❓ Is the agent taking action or just giving recommendations?</h3>
+            <p style="font-size: 0.92rem; color: #93c5fd; font-weight: 600; margin-bottom: 8px; background: rgba(59,130,246,0.1); padding: 6px 12px; border-radius: 6px; display: inline-block;">It enforces  blocks PR merges when readiness score is below threshold.</p>
+            <ul style="list-style: disc; padding-left: 20px; margin: 0;">
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Security gate is a concrete enforcement action</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Outputs structured recommendations (algorithms, effort, owners)</li>
+                <li style="font-size: 0.85rem; color: #cbd5e1; line-height: 1.7;">Auto-patching excluded  crypto migration requires human judgment</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<!-- ============ SLIDE 8: LIMITATIONS ============ -->
+<section class="slide slide-limits">
+    <h2 class="slide-title">Key Limitations</h2>
+    <p class="slide-subtitle">What Q-Shield Agent does not cover  important for honest assessment.</p>
+    <div class="limits-grid">
+        <div class="limit-card">
+            <div class="limit-icon">⚠️</div>
+            <div>
+                <h3>CBOM Completeness</h3>
+                <p>The agent only sees cryptographic assets present in the CBOM input. If the CBOM scanner misses a dependency, Q-Shield won't detect it.</p>
+            </div>
+        </div>
+        <div class="limit-card">
+            <div class="limit-icon">🤖</div>
+            <div>
+                <h3>LLM Accuracy</h3>
+                <p>Despite guardrails, LLM outputs may still contain imprecise language. Guardrails catch structural issues  not subtle semantic errors.</p>
+            </div>
+        </div>
+        <div class="limit-card">
+            <div class="limit-icon">🔌</div>
+            <div>
+                <h3>External API Dependency</h3>
+                <p>Report generation requires Mistral API access. If the API is unavailable or rate-limited, the pipeline step will fail.</p>
+            </div>
+        </div>
+        <div class="limit-card">
+            <div class="limit-icon">📦</div>
+            <div>
+                <h3>No Auto-Remediation</h3>
+                <p>Q-Shield recommends fixes but does not automatically apply code changes. Engineers must implement the migration manually.</p>
+            </div>
+        </div>
+        <div class="limit-card">
+            <div class="limit-icon">🧪</div>
+            <div>
+                <h3>Static Analysis Scope</h3>
+                <p>Cryptographic usage detected at build/config time only. Runtime-negotiated algorithms (TLS handshakes, dynamic key selection) are not covered.</p>
+            </div>
+        </div>
+        <div class="limit-card">
+            <div class="limit-icon">📚</div>
+            <div>
+                <h3>Knowledge Base Currency</h3>
+                <p>RAG knowledge is limited to the NIST PDFs in the repository. New NIST publications require manual ingestion to update guidance.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ============ SCRIPTS ============ -->
+<script>
+    const slides = document.querySelectorAll('.slide');
+    const dots = document.querySelectorAll('.nav-dot');
+    function scrollToSlide(i) { slides[i].scrollIntoView({ behavior: 'smooth' }); }
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const i = Array.from(slides).indexOf(entry.target);
+                dots.forEach(d => d.classList.remove('active'));
+                if (dots[i]) dots[i].classList.add('active');
+            }
+        });
+    }, { threshold: 0.4 });
+    slides.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
