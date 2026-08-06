@@ -53,6 +53,14 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 LLM_MAX_TOKENS = _get_int("LLM_MAX_TOKENS", 4096)
 
+# How many times agent.py will regenerate the report when the hallucination
+# guardrail flags an ungrounded algorithm mention (e.g. the model adding a
+# generic "also avoid DES/Blowfish" aside not backed by any finding).
+# Prompt instructions alone weren't reliable enough to prevent this, so each
+# retry calls out the exact offending term(s) from the previous attempt. Set
+# to 1 to disable retries and block immediately on the first failure.
+MAX_GENERATION_ATTEMPTS = _get_int("MAX_GENERATION_ATTEMPTS", 3)
+
 # ---------------------------------------------------------------------------
 # Security gate
 # ---------------------------------------------------------------------------

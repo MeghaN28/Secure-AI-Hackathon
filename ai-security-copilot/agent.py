@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 
 import config
@@ -7,6 +8,21 @@ from rag_retriever import retrieve_knowledge
 from guardrails import GuardrailRunner
 from llm_client import ask_llm
 from pqc_analysis import calculate_security_score
+
+_HALLUCINATED_ALGO_DETAIL = re.compile(r"Algorithm '([^']+)'")
+
+
+def _extract_hallucinated_algorithms(violations):
+    """Pull the offending algorithm name out of each hallucinated_algorithm
+    violation's detail string, for building a targeted retry prompt."""
+    names = []
+    for v in violations:
+        if v.get("type") != "hallucinated_algorithm":
+            continue
+        match = _HALLUCINATED_ALGO_DETAIL.search(v.get("detail", ""))
+        if match:
+            names.append(match.group(1))
+    return sorted(set(names))
 
 
 SECURITY_CONTEXT_FILE = "output/combined_security_context.json"
@@ -48,9 +64,15 @@ def generate_migration_waves(findings):
     return waves
 
 
-def build_prompt(context, remediation_plan, sonar_findings, evidence_by_finding):
+def build_prompt(context, remediation_plan, sonar_findings, evidence_by_finding, correction_note=""):
     """
     Build the report-generation prompt.
+
+    `correction_note`, when non-empty, is injected as a final, high-priority
+    instruction calling out specific problems from a prior failed attempt
+    (see the self-correction retry loop in __main__). Kept as a plain
+    trailing paragraph rather than folded into the static rules list so it's
+    obviously attempt-specific.
 
     `sonar_findings` and `evidence_by_finding` are passed in explicitly
     (rather than re-derived from `context` / re-fetched from the vector
@@ -357,6 +379,9 @@ Migration Waves:
 
 """
 
+    if correction_note:
+        prompt += f"\n\nCORRECTION REQUIRED (read this last, it overrides anything above it):\n{correction_note}\n"
+
     return prompt
 
 
@@ -447,45 +472,74 @@ if __name__ == "__main__":
     }
     sanitized_sonar_findings = pre_result["sanitized_sonar_findings"]
 
-    # --- Generate Report ---
-    prompt = build_prompt(
-        context,
-        remediation_plan,
-        sanitized_sonar_findings,
-        sanitized_evidence_by_finding,
-    )
+    # --- Generate Report, with bounded self-correction ---
+    # A prompt-level algorithm allow-list alone wasn't reliable enough: the
+    # model would still add ungrounded "also avoid DES/Blowfish"-style asides
+    # in the Limitations/NIST Guidance sections. When the hallucination
+    # guardrail's *only* complaint is ungrounded algorithm mentions, retry
+    # with the exact offending term(s) called out, up to
+    # config.MAX_GENERATION_ATTEMPTS. Any other guardrail failure (missing
+    # sections, bad file references, etc.) is not retried - it goes straight
+    # to blocking, since a retry loop papering over those would just hide
+    # real problems.
+    correction_note = ""
+    response = None
+    post_result = None
 
-    response = ask_llm(prompt)
-
-    # --- GUARDRAIL 2 & 3: Post-Generation (Hallucination + Output) ---
-    print("\n🛡️  Running post-generation guardrails...")
-    post_result = guardrails.run_post_generation(response)
-
-    hallucination = post_result["hallucination_check"]
-    output_val = post_result["output_validation"]
-
-    if hallucination["passed"]:
-        print("✅ Hallucination check passed.")
-    else:
-        print(
-            f"⚠️  Hallucination issues: "
-            f"{hallucination['violation_count']} violation(s)"
+    for attempt in range(1, config.MAX_GENERATION_ATTEMPTS + 1):
+        prompt = build_prompt(
+            context,
+            remediation_plan,
+            sanitized_sonar_findings,
+            sanitized_evidence_by_finding,
+            correction_note=correction_note,
         )
-        for v in hallucination["violations"]:
-            print(f"   - [{v['severity'].upper()}] {v['detail']}")
 
-    if output_val["passed"]:
-        print("✅ Output validation passed.")
-    else:
-        print(
-            f"⚠️  Output issues: "
-            f"{output_val['violation_count']} violation(s)"
+        response = ask_llm(prompt)
+
+        print(f"\n🛡️  Running post-generation guardrails (attempt {attempt}/{config.MAX_GENERATION_ATTEMPTS})...")
+        post_result = guardrails.run_post_generation(response)
+
+        hallucination = post_result["hallucination_check"]
+        output_val = post_result["output_validation"]
+
+        if hallucination["passed"]:
+            print("✅ Hallucination check passed.")
+        else:
+            print(f"⚠️  Hallucination issues: {hallucination['violation_count']} violation(s)")
+            for v in hallucination["violations"]:
+                print(f"   - [{v['severity'].upper()}] {v['detail']}")
+
+        if output_val["passed"]:
+            print("✅ Output validation passed.")
+        else:
+            print(f"⚠️  Output issues: {output_val['violation_count']} violation(s)")
+            for v in output_val["violations"]:
+                print(f"   - [{v['severity'].upper()}] {v['detail']}")
+
+        print(f"\n📊 Report completeness: {output_val['completeness_score']}%")
+        print(f"📊 Overall: {post_result['recommendation']}")
+
+        offending_algorithms = _extract_hallucinated_algorithms(hallucination["violations"])
+        only_algorithm_violations = (
+            hallucination["violations"]
+            and all(v["type"] == "hallucinated_algorithm" for v in hallucination["violations"])
+            and output_val["passed"]
         )
-        for v in output_val["violations"]:
-            print(f"   - [{v['severity'].upper()}] {v['detail']}")
 
-    print(f"\n📊 Report completeness: {output_val['completeness_score']}%")
-    print(f"📊 Overall: {post_result['recommendation']}")
+        if post_result["passed"] or not only_algorithm_violations or attempt == config.MAX_GENERATION_ATTEMPTS:
+            break
+
+        print(
+            f"\n🔁 Regenerating (attempt {attempt + 1}/{config.MAX_GENERATION_ATTEMPTS}) - "
+            f"previous draft named disallowed algorithm(s): {', '.join(offending_algorithms)}"
+        )
+        correction_note = (
+            f"Your previous draft incorrectly mentioned the following algorithm(s), which are "
+            f"NOT in the allowed list and must not appear anywhere in this report: "
+            f"{', '.join(offending_algorithms)}. Regenerate the full report from scratch. Do not "
+            "name these algorithms even as a passing example of other legacy algorithms to avoid."
+        )
 
     # --- Output ---
     print("\n===== AI SECURITY REPORT =====\n")
