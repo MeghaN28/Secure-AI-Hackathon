@@ -98,6 +98,22 @@ def build_prompt(context, remediation_plan, sonar_findings, evidence_by_finding)
 
     migration_waves = generate_migration_waves(pqc_findings)
 
+    # Explicit allow-list of every algorithm name the LLM is permitted to
+    # use, derived directly from evidence (current findings + their
+    # recommended replacements). "Only discuss algorithms present in
+    # findings" alone wasn't enough - models still add generic asides like
+    # "you should also avoid DES/RC4" as general security education, which
+    # the hallucination guardrail then (correctly) blocks. Naming the exact
+    # allowed set removes the ambiguity that produced that failure mode.
+    allowed_algorithms = sorted(
+        {finding.get("asset") for finding in pqc_findings if finding.get("asset")}
+        | {
+            algo
+            for finding in pqc_findings
+            for algo in (finding.get("recommended_algorithm") or [])
+        }
+    )
+
     prompt = f"""
 
 You are a Senior Application Security and
@@ -127,6 +143,14 @@ IMPORTANT RULES:
 
 - Only discuss algorithms present in findings.
 
+- You may name ONLY the following cryptographic algorithms anywhere in the
+  report: {", ".join(allowed_algorithms) if allowed_algorithms else "(none present in findings)"}.
+  Do not name any other algorithm for any reason - not as a generic
+  example, not as "other legacy algorithms to also avoid", not in the
+  Executive Summary, NIST Guidance, or Limitations sections. If you want to
+  make a general point about legacy cryptography, make it without naming a
+  specific algorithm that isn't in the list above.
+
 - Do not invent vulnerabilities.
 
 - Do not assume missing evidence.
@@ -151,6 +175,9 @@ IMPORTANT RULES:
   must be filled in with a real value from the evidence. Never leave a
   field label with nothing after it - if there is genuinely no value,
   write "No evidence available" instead of leaving it blank.
+
+- REMINDER: the only algorithms you may name anywhere in the report are:
+  {", ".join(allowed_algorithms) if allowed_algorithms else "(none present in findings)"}.
 
 
 
