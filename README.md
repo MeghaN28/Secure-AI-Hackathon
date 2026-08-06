@@ -44,6 +44,18 @@ Intentionally vulnerable reference application used for security experimentation
 LLM provider, gate threshold, and guardrail blocking strictness are all
 configurable via environment variables - see `ai-security-copilot/config.py`
 and the [Configuration](#configuration) section below.
+> **Main Project & PR:** The primary implementation is located in the **`fea_guardrail_1`**  branch https://github.com/MeghaN28/Secure-AI-Hackathon/tree/fea_guardrail_1.  That branch contains the complete AI Security Copilot pipeline, GitHub Actions workflow, RAG integration, automated report generation, and the associated pull request with all major changes.
+And the PR to be looked at is : https://github.com/MeghaN28/Secure-AI-Hackathon/pull/4
+
+## Repository Structure
+
+- `ai-security-copilot/` — main Python workflow for CBOM parsing, rule evaluation, remediation planning, and AI-powered report generation.
+- `cbom-reports/` — generated or curated CBOM artifacts used for analysis.
+- `cbomkit-theia/` — Go-based CBOM tooling and related scanner components.
+- `sonar-cryptography/` — cryptography-focused rules, engine components, and plugin logic.
+- `wrongsecrets/` — intentionally vulnerable reference application used for security experimentation - https://github.com/OWASP/wrongsecrets
+- `sonarqube/` — local SonarQube installation and supporting runtime components.
+- `.github/workflows/pqc-security-scan.yml` — CI workflow that runs the PQC scan pipeline on pull requests and pushes.
 
 ## Repository Structure
 
@@ -236,3 +248,5 @@ This project helps teams:
 - Generate actionable, evidence-backed remediation plans
 - Validate AI outputs to prevent hallucinated security advice
 - Automate security assessment in CI/CD pipelines
+
+
