@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SonarQube report/vulnerabilities/hotspots input",
+  "description": "Structural contract for the three SonarQube export files consumed by sonarqube_parser.py. A file may legitimately contain only 'issues', only 'hotspots', both, or neither (empty report) - but whichever keys are present must have the right shape.",
+  "type": "object",
+  "properties": {
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] },
+          "severity": { "type": ["string", "null"] },
+          "type": { "type": ["string", "null"] },
+          "rule": { "type": ["string", "null"] },
+          "message": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "hotspots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "component": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] },
+          "vulnerabilityProbability": { "type": ["string", "null"] },
+          "ruleKey": { "type": ["string", "null"] },
+          "message": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

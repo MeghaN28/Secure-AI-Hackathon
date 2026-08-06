@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 
 CBOM_FILE = "output/security_findings.json"
@@ -10,8 +11,19 @@ OUTPUT_FILE = "output/combined_security_context.json"
 
 def load_json(path):
 
-    with open(path,"r") as f:
-        return json.load(f)
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(
+            f"❌ {path} not found. Run the CBOM and SonarQube parser steps "
+            "before sonar_integration.py.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"❌ {path} is not valid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 

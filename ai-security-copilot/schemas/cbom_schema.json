@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CBOM (CycloneDX) input",
+  "description": "Minimal structural contract for the CBOM file consumed by cbom_parser.py. Intentionally loose on unknown fields - it exists to catch truncated/malformed scans, not to fully validate CycloneDX.",
+  "type": "object",
+  "required": ["components"],
+  "properties": {
+    "bomFormat": { "type": "string" },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string" },
+          "name": { "type": "string" },
+          "cryptoProperties": { "type": "object" },
+          "evidence": { "type": "object" }
+        }
+      }
+    }
+  }
+}
