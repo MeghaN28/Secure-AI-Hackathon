@@ -3,13 +3,27 @@ AI Security Copilot - Guardrails Module
 
 Three guardrails for trustworthy AI-generated security reports:
 1. Hallucination Guardrail - verifies claims against CBOM/Sonar/RAG evidence
-2. Prompt Injection Guardrail - protects RAG and Sonar inputs from malicious instructions
-3. Output Validation Guardrail - ensures report completeness and no fabricated references
+2. Prompt Injection Guardrail - sanitizes RAG and Sonar inputs and detects
+   malicious instructions before they reach the prompt
+3. Output Validation Guardrail - ensures report completeness (including that
+   template fields were actually filled in, not just present) and flags
+   fabricated references
+
+GuardrailRunner._is_blocking() decides whether a violation is severe enough
+(config.GUARDRAIL_BLOCK_SEVERITY) to actually stop the pipeline. agent.py and
+security_gate.py both check the resulting "blocking" flag and exit(1) when
+set - detection alone used to be the whole story; it now has teeth.
 """
 
 import json
 import re
 from typing import Any
+
+import config
+
+# Shared severity ranking used to decide whether a set of violations should
+# block the pipeline (see GuardrailRunner._is_blocking). Higher = worse.
+SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
 # =============================================================================
@@ -345,6 +359,17 @@ class PromptInjectionGuardrail:
             })
         return sanitized
 
+    def sanitize_sonar_findings(self, sonar_findings: list) -> list:
+        """Sanitize free-text fields of SonarQube findings before they reach the prompt."""
+        sanitized = []
+        for finding in sonar_findings:
+            clean = dict(finding)
+            for field in ("message", "component", "rule"):
+                if clean.get(field):
+                    clean[field] = self.sanitize_text(str(clean[field]))
+            sanitized.append(clean)
+        return sanitized
+
     def _scan_text(self, text: str, source: str) -> list:
         """Scan a text block for injection patterns."""
         threats = []
@@ -396,6 +421,27 @@ class OutputValidationGuardrail:
         r"I apologize",
     ]
 
+    # Template field labels from agent.py's prompt (e.g. "Finding ID:",
+    # "Risk:") left with nothing after them on the same line. A report can
+    # have every required section header (which is all _check_required_sections
+    # and the old completeness score checked) and still be substantively
+    # empty underneath - this is what let a prior report claim "100%
+    # complete" while containing unfilled template fields.
+    PLACEHOLDER_LABEL_PATTERN = re.compile(
+        r'^(Finding ID|Risk|Category|Priority|File|Line|Severity|Type|Rule|'
+        r'Message|Owner|Confidence|Current State|Target State|'
+        r'Recommended Algorithm|Transition Strategy|Migration Wave|'
+        r'Estimated Effort|Estimated Hours|Auto Fix Available)\s*:\s*$',
+        re.MULTILINE,
+    )
+
+    # Literal placeholder/template text that should never survive into a
+    # generated report.
+    LITERAL_PLACEHOLDER_PATTERN = re.compile(
+        r'<Asset Name>|\[INSERT|\bTBD\b|\bLorem ipsum\b|\bPLACEHOLDER\b',
+        re.IGNORECASE,
+    )
+
     def __init__(self, pqc_findings: list, valid_nist_refs: set = None):
         self.pqc_findings = pqc_findings
         self.valid_nist_refs = valid_nist_refs or HallucinationGuardrail.VALID_NIST_REFS
@@ -413,6 +459,7 @@ class OutputValidationGuardrail:
         violations.extend(self._check_refusal_patterns(report_text))
         violations.extend(self._check_finding_coverage(report_text))
         violations.extend(self._check_score_format(report_text))
+        violations.extend(self._check_unfilled_placeholders(report_text))
 
         return {
             "passed": len(violations) == 0,
@@ -529,6 +576,37 @@ class OutputValidationGuardrail:
 
         return violations
 
+    def _check_unfilled_placeholders(self, report: str) -> list:
+        """
+        Detect template labels the LLM echoed back without filling in a
+        value (e.g. a bare "Finding ID:" with nothing after it), and
+        literal placeholder text left in the output. Required-section
+        presence alone doesn't mean a section has real content.
+        """
+        violations = []
+
+        empty_labels = self.PLACEHOLDER_LABEL_PATTERN.findall(report)
+        if empty_labels:
+            violations.append({
+                "type": "unfilled_template_field",
+                "severity": "high",
+                "detail": (
+                    f"{len(empty_labels)} template label(s) left blank in the report "
+                    f"(e.g. '{empty_labels[0]}:'), suggesting the LLM echoed the "
+                    "template instead of filling it in."
+                ),
+            })
+
+        literal = self.LITERAL_PLACEHOLDER_PATTERN.findall(report)
+        if literal:
+            violations.append({
+                "type": "literal_placeholder_text",
+                "severity": "high",
+                "detail": f"Literal placeholder text found in report: {sorted(set(literal))[:5]}",
+            })
+
+        return violations
+
     def _is_known_reference(self, ref: str) -> bool:
         """Check if a NIST reference is one we recognize."""
         for valid in self.valid_nist_refs:
@@ -539,7 +617,13 @@ class OutputValidationGuardrail:
         return False
 
     def _calculate_completeness(self, report: str) -> float:
-        """Calculate what percentage of required sections are present."""
+        """
+        Calculate what percentage of the report is actually complete: required
+        section headers present, minus a penalty for template fields that were
+        left blank. Section-header presence alone previously let a report with
+        blank "Finding ID:" / "Risk:" / etc. fields underneath every header
+        still score 100% complete.
+        """
         section_keywords = {
             "Quantum Readiness Score": ["readiness", "score"],
             "Executive Summary": ["executive", "summary"],
@@ -555,7 +639,12 @@ class OutputValidationGuardrail:
                 if re.search(pattern, report, re.IGNORECASE | re.MULTILINE):
                     found += 1
                     break
-        return round((found / len(section_keywords)) * 100, 1)
+        section_score = (found / len(section_keywords)) * 100
+
+        empty_label_count = len(self.PLACEHOLDER_LABEL_PATTERN.findall(report))
+        placeholder_penalty = min(40, empty_label_count * 4)
+
+        return round(max(0.0, section_score - placeholder_penalty), 1)
 
 
 # =============================================================================
@@ -587,20 +676,33 @@ class GuardrailRunner:
         """
         Run input guardrails BEFORE sending to LLM.
         Call this before constructing the prompt.
+
+        Always returns sanitized_evidence/sanitized_sonar_findings (not just
+        when threats are detected) - the caller (agent.py) uses these to
+        build the prompt unconditionally as defense-in-depth. Previously the
+        sanitized evidence was computed here but the prompt builder never
+        used it, so detected injection patterns were reported but never
+        actually removed from what reached the LLM.
         """
         result = self.injection_guard.validate_inputs(
             self.rag_evidence, self.sonar_findings, self.cbom_data
         )
 
+        result["sanitized_evidence"] = self.injection_guard.sanitize_evidence(
+            self.rag_evidence
+        )
+        result["sanitized_sonar_findings"] = self.injection_guard.sanitize_sonar_findings(
+            self.sonar_findings
+        )
+        result["blocking"] = self._is_blocking(result["threats"])
+
         if not result["passed"]:
-            # Sanitize and return cleaned evidence
-            result["sanitized_evidence"] = self.injection_guard.sanitize_evidence(
-                self.rag_evidence
-            )
             result["recommendation"] = (
-                "Injection patterns detected. Using sanitized evidence. "
-                "Review threats for potential data integrity issues."
+                "Injection patterns detected. Sanitized evidence was used to build "
+                "the prompt. Review threats for potential data integrity issues."
             )
+        else:
+            result["recommendation"] = "No injection threats detected."
 
         return result
 
@@ -617,12 +719,14 @@ class GuardrailRunner:
             hallucination_result["violation_count"] +
             output_result["violation_count"]
         )
+        all_violations = hallucination_result["violations"] + output_result["violations"]
 
         return {
             "passed": all_passed,
             "hallucination_check": hallucination_result,
             "output_validation": output_result,
             "total_violations": total_violations,
+            "blocking": self._is_blocking(all_violations),
             "recommendation": self._get_recommendation(
                 hallucination_result, output_result
             ),
@@ -635,9 +739,24 @@ class GuardrailRunner:
 
         return {
             "overall_passed": pre["passed"] and post["passed"],
+            "overall_blocking": pre["blocking"] or post["blocking"],
             "pre_generation": pre,
             "post_generation": post,
         }
+
+    def _is_blocking(self, violations: list) -> bool:
+        """
+        Whether any violation/threat meets or exceeds the configured
+        block-on severity (config.GUARDRAIL_BLOCK_SEVERITY, default "high").
+        This is what agent.py and security_gate.py actually check to decide
+        whether to fail the build - previously nothing consumed severity at
+        all, so every violation was advisory-only regardless of how serious.
+        """
+        threshold = SEVERITY_ORDER.get(config.GUARDRAIL_BLOCK_SEVERITY, SEVERITY_ORDER["high"])
+        return any(
+            SEVERITY_ORDER.get(v.get("severity", "low"), 0) >= threshold
+            for v in violations
+        )
 
     def _get_recommendation(self, hallucination_result: dict,
                             output_result: dict) -> str:

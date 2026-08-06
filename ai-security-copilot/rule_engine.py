@@ -1,169 +1,101 @@
+"""
+PQC Rule Validation Gate.
+
+This script used to re-run its own CBOM analysis (with different
+normalization and finding_id logic than cbom_parser.py) and overwrite
+output/security_findings.json - creating two competing analyzers whose
+results diverged depending on run order, and whichever ran last in CI
+silently won. See pqc_analysis.py's docstring for the full story.
+
+cbom_parser.py is now the single analyzer and single writer of
+output/security_findings.json. This script's job is to verify that file
+is well-formed (schema) and still consistent with the current rule book
+(pqc_rules.json) before remediation planning, the AI report, or the
+merge gate are allowed to trust it - catching drift, corruption, or a
+stale/hand-edited findings file between pipeline stages.
+"""
+
 import json
-import os
+import sys
+
+from pqc_analysis import normalize_algorithm
+from schema_validation import SchemaValidationError, validate
 
 RULE_FILE = "pqc_rules.json"
-CBOM_FILE = "app-cbom-final.json"
-OUTPUT_FILE = "output/security_findings.json"
+FINDINGS_FILE = "output/security_findings.json"
 
 
-def load_rules():
-    with open(RULE_FILE, "r") as f:
+def load_json(path):
+    with open(path, "r") as f:
         return json.load(f)
 
 
-def load_cbom():
-    with open(CBOM_FILE, "r") as f:
-        return json.load(f)
-
-
-def normalize_algorithm(name):
+def validate_against_rulebook(findings, rules):
     """
-    Normalize algorithm names so CBOM names
-    match rule book entries.
-    
-    Examples:
-    SHA-1   -> SHA1
-    SHA_1   -> SHA1
-    AES-128 -> AES128
+    Cross-check each finding's risk against the current rule book,
+    keyed by normalized algorithm name (mirrors pqc_analysis.build_rule_lookup).
     """
+    normalized_rules = {normalize_algorithm(name): rule for name, rule in rules.items()}
 
-    if not name:
-        return ""
+    errors = []
+    for finding in findings:
+        algo_key = finding.get("normalized_algorithm") or normalize_algorithm(finding.get("asset", ""))
+        rule = normalized_rules.get(algo_key)
 
-    name = name.upper()
-    name = name.replace("-", "")
-    name = name.replace("_", "")
-    name = name.replace(" ", "")
-
-    return name
-
-
-def build_normalized_rules(rules):
-    """
-    Create normalized lookup table.
-    """
-
-    normalized_rules = {}
-
-    for algorithm, rule in rules.items():
-        normalized_rules[normalize_algorithm(algorithm)] = rule
-
-    return normalized_rules
-def extract_evidence(evidence):
-
-    occurrences = evidence.get("occurrences", [])
-
-    extracted = []
-
-    for item in occurrences[:5]:
-
-        extracted.append({
-            "location": item.get("location"),
-            "line": item.get("line"),
-            "context": item.get("additionalContext")
-        })
-
-    return extracted
-
-
-def analyze_cbom(cbom, rules):
-
-    findings = []
-
-    normalized_rules = build_normalized_rules(rules)
-
-    for asset in cbom.get("components", []):
-
-        if asset.get("type") != "cryptographic-asset":
+        if rule is None:
+            errors.append(
+                f"Finding '{finding.get('finding_id')}' references algorithm "
+                f"'{finding.get('asset')}' which is not in {RULE_FILE}."
+            )
             continue
 
-        crypto_properties = asset.get("cryptoProperties", {})
+        if rule.get("risk") and rule.get("risk") != finding.get("risk"):
+            errors.append(
+                f"Finding '{finding.get('finding_id')}' has risk="
+                f"'{finding.get('risk')}' but {RULE_FILE} currently says risk="
+                f"'{rule.get('risk')}' for {finding.get('asset')} "
+                "(findings file is stale relative to the rule book)."
+            )
 
-        if crypto_properties.get("assetType") != "algorithm":
-            continue
-
-
-        raw_algorithm = asset.get("name")
-
-        algorithm = normalize_algorithm(raw_algorithm)
-
-
-        if algorithm in normalized_rules:
-            rule = normalized_rules[algorithm]
-
-            findings.append({
-                "asset": raw_algorithm,
-                "normalized_algorithm": algorithm,
-                "risk": rule.get("risk"),
-                "category": rule.get("category"),
-                "priority": rule.get("priority"),
-                "reason": rule.get("reason"),
-                "migration": rule.get("migration"),
-                "finding_id": f"PQC-{algorithm}-{len(findings)+1:03d}",
-
-                # Migration Intelligence
-                "recommended_algorithm": rule.get("recommended_algorithm", []),
-                "transition_strategy": rule.get("transition_strategy", "Not specified"),
-                "migration_wave": rule.get("migration_wave", "Not specified"),
-
-                # Engineering Planning
-                "estimated_effort": rule.get("estimated_effort", "Unknown"),
-                "estimated_hours": rule.get("estimated_hours", "Unknown"),
-                "owner": rule.get("owner", "Security Team"),
-
-                # Compliance Evidence
-                "nist_reference": rule.get("nist_reference", []),
-
-                # Confidence
-                "confidence": rule.get("confidence", "Medium"),
-                "auto_fix": rule.get("auto_fix", False),
-
-                # Code Evidence
-                "evidence": extract_evidence(asset.get("evidence", {})),
-            })
+    return errors
 
 
-    return findings
+def main():
+    try:
+        findings = load_json(FINDINGS_FILE)
+    except FileNotFoundError:
+        print(
+            f"❌ {FINDINGS_FILE} not found. Run cbom_parser.py before rule_engine.py.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"❌ {FINDINGS_FILE} is not valid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
 
+    rules = load_json(RULE_FILE)
 
+    try:
+        validate(findings, "findings_schema.json", FINDINGS_FILE)
+    except SchemaValidationError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        sys.exit(1)
 
-def save_results(findings):
+    rulebook_errors = validate_against_rulebook(findings, rules)
+    if rulebook_errors:
+        print(
+            f"❌ {FINDINGS_FILE} failed rule-book consistency check "
+            f"({len(rulebook_errors)} issue(s)):"
+        )
+        for err in rulebook_errors:
+            print(f"  - {err}")
+        sys.exit(1)
 
-    output_dir = os.path.dirname(OUTPUT_FILE)
-
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-    with open(OUTPUT_FILE, "w") as f:
-        json.dump(findings, f, indent=2)
-
+    print(
+        f"✅ {FINDINGS_FILE}: schema valid, {len(findings)} finding(s) "
+        f"consistent with {RULE_FILE}."
+    )
 
 
 if __name__ == "__main__":
-
-    rules = load_rules()
-
-    cbom = load_cbom()
-
-
-    findings = analyze_cbom(cbom, rules)
-
-
-    print("\n===== PQC SECURITY FINDINGS =====")
-
-    print("Total findings:", len(findings))
-
-
-    for finding in findings:
-
-        print(
-            f"{finding['asset']} | "
-            f"{finding['risk']} | "
-            f"{finding['priority']}"
-        )
-
-
-    save_results(findings)
-
-
-    print("\nSaved:", OUTPUT_FILE)
+    main()

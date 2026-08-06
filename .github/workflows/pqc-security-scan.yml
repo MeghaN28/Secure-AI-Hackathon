@@ -82,11 +82,26 @@ jobs:
       # ==============================
       # CBOM ANALYSIS
       # ==============================
+      # cbom_parser.py is the single analyzer in the pipeline and the only
+      # step that writes output/security_findings.json.
 
       - name: Run CBOM Security Analysis
         run: |
 
           python3 cbom_parser.py
+
+
+
+      # rule_engine.py no longer re-analyzes the CBOM (it used to, and
+      # competed with cbom_parser.py to write the same output file). It now
+      # validates that output/security_findings.json is well-formed and
+      # still consistent with pqc_rules.json, and fails the job if not -
+      # so a bad or stale findings file is caught here instead of silently
+      # flowing into remediation planning and the AI report.
+      - name: Validate PQC Findings Against Rule Book
+        run: |
+
+          python3 rule_engine.py
 
 
 
@@ -112,16 +127,8 @@ jobs:
 
 
       # ==============================
-      # PQC INTELLIGENCE
+      # REMEDIATION PLANNING
       # ==============================
-
-      - name: Run PQC Rule Engine
-        run: |
-
-          python3 rule_engine.py
-
-
-
 
       - name: Generate Remediation Plan
         run: |
@@ -152,7 +159,19 @@ jobs:
 
         env:
 
+          # Which LLM backend generates the report. Defaults to "mistral" if
+          # unset; set the LLM_PROVIDER repo/environment variable to
+          # "anthropic" to use Claude instead - no code changes required
+          # (see ai-security-copilot/llm_client.py).
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'mistral' }}
+
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # Guardrail violations at or above this severity fail this step
+          # (and therefore the job). See ai-security-copilot/config.py.
+          GUARDRAIL_BLOCK_SEVERITY: ${{ vars.GUARDRAIL_BLOCK_SEVERITY || 'high' }}
 
           HF_HOME: ~/.cache/huggingface
 
@@ -164,6 +183,30 @@ jobs:
         run: |
 
           python3 agent.py
+
+
+
+
+      # ==============================
+      # SECURITY GATE
+      # ==============================
+      # This is the actual merge gate: fails the job (blocking the PR, if
+      # this check is marked required in branch protection) when the
+      # readiness score is below threshold OR the guardrails reported a
+      # blocking violation. `if: always()` so it still runs - and still
+      # reports failure - even if agent.py above already exited non-zero
+      # due to a guardrail violation.
+      - name: Enforce Security Gate
+
+        if: always()
+
+        env:
+
+          MINIMUM_SECURITY_SCORE: ${{ vars.MINIMUM_SECURITY_SCORE || '60' }}
+
+        run: |
+
+          python3 security_gate.py
 
 
 
@@ -197,7 +240,10 @@ jobs:
 
       - name: Comment Security Report on PR
 
-        if: github.event_name == 'pull_request'
+        # always() so the PR still gets the report/guardrail comment even
+        # when an earlier step (agent.py or the security gate) failed the
+        # job - a red X with no explanation isn't actionable.
+        if: always() && github.event_name == 'pull_request'
 
         uses: actions/github-script@v7
 

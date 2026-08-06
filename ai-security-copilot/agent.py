@@ -1,17 +1,12 @@
 import json
 import os
+import sys
 
+import config
 from rag_retriever import retrieve_knowledge
 from guardrails import GuardrailRunner
-
-try:
-    from mistralai import Mistral
-
-except ImportError as e:
-    raise ImportError(
-        "Could not import 'Mistral' from 'mistralai'. "
-        "Please ensure 'mistralai>=1.0.0' is installed correctly."
-    ) from e
+from llm_client import ask_llm
+from pqc_analysis import calculate_security_score
 
 
 SECURITY_CONTEXT_FILE = "output/combined_security_context.json"
@@ -20,389 +15,88 @@ REMEDIATION_FILE = "output/remediation_plan.json"
 
 REPORT_FILE = "output/quantum_security_report.md"
 
+GUARDRAIL_RESULTS_FILE = "output/guardrail_results.json"
 
 
 def load_security_context():
-
-    with open(
-        SECURITY_CONTEXT_FILE,
-        "r"
-    ) as f:
-
+    with open(SECURITY_CONTEXT_FILE, "r") as f:
         return json.load(f)
-
 
 
 def load_remediation_plan():
-
-    with open(
-        REMEDIATION_FILE,
-        "r"
-    ) as f:
-
+    with open(REMEDIATION_FILE, "r") as f:
         return json.load(f)
 
 
-
-def ask_mistral(prompt: str) -> str:
-
-    api_key = os.getenv(
-        "MISTRAL_API_KEY"
-    )
-
-
-    if not api_key:
-
-        raise ValueError(
-            "Environment variable MISTRAL_API_KEY is not set."
-        )
-
-
-    client = Mistral(
-        api_key=api_key
-    )
-
-
-    response = client.chat.complete(
-
-        model="mistral-small-latest",
-
-        messages=[
-
-            {
-                "role": "system",
-
-                "content": (
-
-                    "You are a Senior Application Security "
-                    "and Post Quantum Cryptography Security Engineer. "
-
-                    "Generate enterprise security migration "
-                    "assessments using provided evidence only."
-
-                ),
-
-            },
-
-            {
-                "role": "user",
-
-                "content": prompt,
-
-            },
-
-        ],
-
-    )
-
-
-    return response.choices[0].message.content
-
-
-
-def calculate_readiness_score(findings):
-
-    score = 100
-
-
-    severity_penalty = {
-
-        "Critical": 30,
-
-        "High": 20,
-
-        "Medium": 10,
-
-        "Low": 0,
-
-    }
-
-
-    analyzed_assets = set()
-
-    total_penalty = 0
-
-
-    for finding in findings:
-
-
-        asset = finding.get(
-            "asset"
-        )
-
-
-        if asset in analyzed_assets:
-
-            continue
-
-
-        analyzed_assets.add(
-            asset
-        )
-
-
-        risk = finding.get(
-            "risk",
-            "Low"
-        )
-
-
-        total_penalty += severity_penalty.get(
-            risk,
-            0
-        )
-
-
-    # Scale penalty: cap max deduction at 80 points so score
-    # reflects readiness rather than just count of findings.
-    # A fully vulnerable codebase still retains a non-zero score
-    # to indicate the assessment itself completed.
-    num_assets = len(analyzed_assets) if analyzed_assets else 1
-    max_possible_penalty = num_assets * 30  # worst case: all Critical
-    if max_possible_penalty > 0:
-        normalized_penalty = (total_penalty / max_possible_penalty) * 80
-    else:
-        normalized_penalty = 0
-
-    score = round(score - normalized_penalty)
-
-    return max(
-        score,
-        0
-    )
-
-
-
 def generate_migration_waves(findings):
-
     waves = {
-
-
         "Wave 1 - Immediate": [],
-
-
         "Wave 2 - High Priority": [],
-
-
         "Wave 3 - Optimization": [],
-
-
     }
 
-
-
     for finding in findings:
+        risk = finding.get("risk")
 
-
-        risk = finding.get(
-            "risk"
-        )
-
-
-        if risk in [
-            "Critical",
-            "High"
-        ]:
-
-            waves[
-                "Wave 1 - Immediate"
-            ].append(
-                finding.get("asset")
-            )
-
-
+        if risk in ["Critical", "High"]:
+            waves["Wave 1 - Immediate"].append(finding.get("asset"))
         elif risk == "Medium":
-
-            waves[
-                "Wave 2 - High Priority"
-            ].append(
-                finding.get("asset")
-            )
-
-
+            waves["Wave 2 - High Priority"].append(finding.get("asset"))
         else:
-
-            waves[
-                "Wave 3 - Optimization"
-            ].append(
-                finding.get("asset")
-            )
-
+            waves["Wave 3 - Optimization"].append(finding.get("asset"))
 
     return waves
 
 
+def build_prompt(context, remediation_plan, sonar_findings, evidence_by_finding):
+    """
+    Build the report-generation prompt.
 
-def build_prompt(
-    context,
-    remediation_plan
-):
+    `sonar_findings` and `evidence_by_finding` are passed in explicitly
+    (rather than re-derived from `context` / re-fetched from the vector
+    store here) so the caller can hand in the guardrail-sanitized versions.
+    Previously this function called retrieve_knowledge() a second time with
+    unsanitized queries, which meant even when the prompt-injection
+    guardrail detected and "sanitized" evidence, that sanitized copy was
+    never actually the thing sent to the LLM.
+    """
 
-
-    pqc_findings = context.get(
-        "pqc_findings",
-        []
-    )
-
-
-    sonar_findings = context.get(
-        "sonarqube_findings",
-        []
-    )
-
+    pqc_findings = context.get("pqc_findings", [])
 
     knowledge_context = []
 
-
-
     for finding in pqc_findings:
-
-
-        risk = finding.get(
-            "risk"
-        )
-
+        risk = finding.get("risk")
 
         if risk == "Low":
-
             continue
 
-
-
-        query = (
-
-            f"{finding['asset']} "
-
-            f"{finding['category']} "
-
-            "NIST migration guidance "
-
-            "post quantum cryptography"
-
-        )
-
-
-
-        evidence = retrieve_knowledge(
-            query
-        )
-
-
+        evidence = evidence_by_finding.get(finding.get("finding_id"), [])
 
         knowledge_context.append(
-
             {
-
-
-                "finding_id":
-                    finding.get(
-                        "finding_id"
-                    ),
-
-
-                "asset":
-                    finding.get(
-                        "asset"
-                    ),
-
-
-                "risk":
-                    finding.get(
-                        "risk"
-                    ),
-
-
-                "category":
-                    finding.get(
-                        "category"
-                    ),
-
-
-                "priority":
-                    finding.get(
-                        "priority"
-                    ),
-
-
-                "reason":
-                    finding.get(
-                        "reason"
-                    ),
-
-
-                "migration":
-                    finding.get(
-                        "migration"
-                    ),
-
-
-                "recommended_algorithm":
-                    finding.get(
-                        "recommended_algorithm"
-                    ),
-
-
-                "transition_strategy":
-                    finding.get(
-                        "transition_strategy"
-                    ),
-
-
-                "migration_wave":
-                    finding.get(
-                        "migration_wave"
-                    ),
-
-
-                "estimated_effort":
-                    finding.get(
-                        "estimated_effort"
-                    ),
-
-
-                "estimated_hours":
-                    finding.get(
-                        "estimated_hours"
-                    ),
-
-
-                "owner":
-                    finding.get(
-                        "owner"
-                    ),
-
-
-                "nist_reference":
-                    finding.get(
-                        "nist_reference"
-                    ),
-
-
-                "confidence":
-                    finding.get(
-                        "confidence"
-                    ),
-
-
-                "evidence":
-                    evidence,
-
+                "finding_id": finding.get("finding_id"),
+                "asset": finding.get("asset"),
+                "risk": finding.get("risk"),
+                "category": finding.get("category"),
+                "priority": finding.get("priority"),
+                "reason": finding.get("reason"),
+                "migration": finding.get("migration"),
+                "recommended_algorithm": finding.get("recommended_algorithm"),
+                "transition_strategy": finding.get("transition_strategy"),
+                "migration_wave": finding.get("migration_wave"),
+                "estimated_effort": finding.get("estimated_effort"),
+                "estimated_hours": finding.get("estimated_hours"),
+                "owner": finding.get("owner"),
+                "nist_reference": finding.get("nist_reference"),
+                "confidence": finding.get("confidence"),
+                "evidence": evidence,
             }
-
         )
 
+    readiness_score = calculate_security_score(pqc_findings)
 
-
-    readiness_score = calculate_readiness_score(
-        pqc_findings
-    )
-
-
-    migration_waves = generate_migration_waves(
-        pqc_findings
-    )
-
-
+    migration_waves = generate_migration_waves(pqc_findings)
 
     prompt = f"""
 
@@ -452,6 +146,11 @@ IMPORTANT RULES:
 
 - Migration recommendations must come
   from remediation plan.
+
+- Every template field below (Finding ID, Risk, Category, File, Line, etc.)
+  must be filled in with a real value from the evidence. Never leave a
+  field label with nothing after it - if there is genuinely no value,
+  write "No evidence available" instead of leaving it blank.
 
 
 
@@ -609,79 +308,69 @@ Explain:
 
 PQC Security Data:
 
-{json.dumps(
-    knowledge_context,
-    indent=2
-)}
+{json.dumps(knowledge_context, indent=2)}
 
 
 
 SonarQube Findings:
 
-{json.dumps(
-    sonar_findings,
-    indent=2
-)}
+{json.dumps(sonar_findings, indent=2)}
 
 
 
 Remediation Plan:
 
-{json.dumps(
-    remediation_plan,
-    indent=2
-)}
+{json.dumps(remediation_plan, indent=2)}
 
 
 
 Migration Waves:
 
-{json.dumps(
-    migration_waves,
-    indent=2
-)}
+{json.dumps(migration_waves, indent=2)}
 
 """
-
 
     return prompt
 
 
+def _write_outputs(response, pre_result, post_result):
+    os.makedirs("output", exist_ok=True)
+
+    with open(REPORT_FILE, "w") as f:
+        f.write(response)
+
+    guardrail_report = {
+        "pre_generation": pre_result,
+        "post_generation": post_result,
+    }
+    with open(GUARDRAIL_RESULTS_FILE, "w") as f:
+        json.dump(guardrail_report, f, indent=2, default=str)
+
+    print("\nSaved report:", REPORT_FILE)
+    print("Saved guardrail results:", GUARDRAIL_RESULTS_FILE)
+
 
 if __name__ == "__main__":
 
-
     context = load_security_context()
-
 
     remediation_plan = load_remediation_plan()
 
+    pqc_findings = context.get("pqc_findings", [])
 
-
-    pqc_findings = context.get(
-        "pqc_findings",
-        []
-    )
-
-
-    sonar_findings = context.get(
-        "sonarqube_findings",
-        []
-    )
-
-
+    sonar_findings = context.get("sonarqube_findings", [])
 
     print(
-
         f"Analyzing "
         f"{len(pqc_findings)} PQC findings "
         f"and "
         f"{len(sonar_findings)} SonarQube findings..."
-
     )
 
-
-    # --- GUARDRAIL: Collect RAG evidence for validation ---
+    # --- Collect RAG evidence once, keyed by finding, and reuse it both for
+    # guardrail validation and for the prompt itself (previously this was
+    # fetched twice with two different code paths). ---
+    evidence_by_finding = {}
     all_rag_evidence = []
     for finding in pqc_findings:
         if finding.get("risk") == "Low":
@@ -693,8 +382,8 @@ if __name__ == "__main__":
             "post quantum cryptography"
         )
         evidence = retrieve_knowledge(query)
+        evidence_by_finding[finding.get("finding_id")] = evidence
         all_rag_evidence.extend(evidence)
-
 
     # --- GUARDRAIL 1: Pre-Generation (Prompt Injection) ---
     print("\n🛡️  Running pre-generation guardrails...")
@@ -714,19 +403,32 @@ if __name__ == "__main__":
     else:
         print("✅ Pre-generation check passed (no injection threats).")
 
+    # --- Actually use the sanitized inputs to build the prompt. This is the
+    # fix for "sanitized input computed then discarded": every prompt is now
+    # built from injection_guard-sanitized RAG evidence and SonarQube text,
+    # not just when a threat happens to be detected (cheap, no-op when
+    # inputs are clean, and closes the gap either way). ---
+    sanitized_evidence_by_finding = {
+        finding_id: [
+            {
+                "content": guardrails.injection_guard.sanitize_text(e.get("content", "")),
+                "source": e.get("source", ""),
+            }
+            for e in evidence
+        ]
+        for finding_id, evidence in evidence_by_finding.items()
+    }
+    sanitized_sonar_findings = pre_result["sanitized_sonar_findings"]
 
     # --- Generate Report ---
     prompt = build_prompt(
         context,
-        remediation_plan
+        remediation_plan,
+        sanitized_sonar_findings,
+        sanitized_evidence_by_finding,
     )
 
-
-
-    response = ask_mistral(
-        prompt
-    )
-
+    response = ask_llm(prompt)
 
     # --- GUARDRAIL 2 & 3: Post-Generation (Hallucination + Output) ---
     print("\n🛡️  Running post-generation guardrails...")
@@ -755,48 +457,31 @@ if __name__ == "__main__":
         for v in output_val["violations"]:
             print(f"   - [{v['severity'].upper()}] {v['detail']}")
 
-    print(
-        f"\n📊 Report completeness: {output_val['completeness_score']}%"
-    )
+    print(f"\n📊 Report completeness: {output_val['completeness_score']}%")
     print(f"📊 Overall: {post_result['recommendation']}")
 
-
     # --- Output ---
-    print(
-        "\n===== AI SECURITY REPORT =====\n"
-    )
+    print("\n===== AI SECURITY REPORT =====\n")
 
+    print(response)
 
-    print(
-        response
-    )
+    _write_outputs(response, pre_result, post_result)
 
+    # --- GUARDRAIL ENFORCEMENT ---
+    # Previously a guardrail failure only printed a warning; the script
+    # always exited 0, so the "security gate" downstream had nothing to
+    # gate on and the workflow never actually blocked anything. Outputs are
+    # written above *before* we exit non-zero, so the uploaded artifact and
+    # PR comment still show exactly what failed and why.
+    blocking = pre_result["blocking"] or post_result["blocking"]
 
-
-    os.makedirs(
-        "output",
-        exist_ok=True
-    )
-
-
-
-    with open(
-        REPORT_FILE,
-        "w"
-    ) as f:
-
-        f.write(
-            response
+    if blocking and config.GUARDRAILS_BLOCK_ON_FAILURE:
+        print(
+            "\n❌ GUARDRAIL GATE FAILED: one or more violations met or exceeded "
+            f"the blocking severity threshold ('{config.GUARDRAIL_BLOCK_SEVERITY}'). "
+            "Failing this step. Set GUARDRAILS_BLOCK_ON_FAILURE=false to make this "
+            "advisory-only."
         )
+        sys.exit(1)
 
-
-    # Save guardrail results alongside the report
-    guardrail_report = {
-        "pre_generation": pre_result,
-        "post_generation": post_result,
-    }
-    with open("output/guardrail_results.json", "w") as f:
-        json.dump(guardrail_report, f, indent=2, default=str)
-
-    print("\nSaved report:", REPORT_FILE)
-    print("Saved guardrail results: output/guardrail_results.json")
+    print("\n✅ Guardrail gate passed.")

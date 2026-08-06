@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PQC security findings output (output/security_findings.json)",
+  "description": "Contract for the pipeline's own intermediate output. Downstream stages (remediation planning, the AI report, the merge gate) all trust this file - if it's malformed or truncated they currently produce a confident-looking but wrong result. rule_engine.py validates every run against this schema before anything downstream is allowed to consume it.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["finding_id", "asset", "risk", "category", "priority"],
+    "properties": {
+      "finding_id": { "type": "string", "minLength": 1 },
+      "asset": { "type": "string", "minLength": 1 },
+      "normalized_algorithm": { "type": "string" },
+      "risk": { "enum": ["Critical", "High", "Medium", "Low"] },
+      "category": { "type": "string" },
+      "priority": { "type": "string" },
+      "nist_reference": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "evidence": { "type": "array" }
+    }
+  }
+}
