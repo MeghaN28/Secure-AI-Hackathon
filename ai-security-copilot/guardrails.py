@@ -17,6 +17,7 @@ set - detection alone used to be the whole story; it now has teeth.
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import config
@@ -436,17 +437,36 @@ class OutputValidationGuardrail:
     )
 
     # Literal placeholder/template text that should never survive into a
-    # generated report.
+    # generated report. Includes generic bracketed placeholders (e.g.
+    # "[Current Date]", "[Insert Date]", "[Security Leadership]") that models
+    # add when they invent a header field (Prepared for/by, Date, Approved
+    # by) that wasn't part of the requested template and then don't have a
+    # real value to put there.
     LITERAL_PLACEHOLDER_PATTERN = re.compile(
-        r'<Asset Name>|\[INSERT|\bTBD\b|\bLorem ipsum\b|\bPLACEHOLDER\b',
+        r'<Asset Name>|\[INSERT|\bTBD\b|\bLorem ipsum\b|\bPLACEHOLDER\b|'
+        r'\[Current Date\]|\[Insert[^\]]*\]|\[DATE\]|\[Date\]|'
+        r'\[Security Leadership\]|\[[A-Za-z][A-Za-z ]*\s(?:Date|Name|Here)\]',
         re.IGNORECASE,
     )
 
-    def __init__(self, pqc_findings: list, valid_nist_refs: set = None):
+    # ISO-style dates (e.g. "2024-06-10") the LLM writes into a "Date:" /
+    # "Generated:" / "Prepared on:" line. Models default to a stale date
+    # baked into their training data instead of the actual run date. Any
+    # such date that doesn't match the day the report was actually
+    # generated is flagged rather than silently trusted.
+    DATED_LABEL_PATTERN = re.compile(
+        r'(?:Date|Generated|Prepared on|Approved on)\s*:?\s*\**(\d{4}-\d{2}-\d{2})',
+        re.IGNORECASE,
+    )
+
+    def __init__(self, pqc_findings: list, valid_nist_refs: set = None, report_date: str = None):
         self.pqc_findings = pqc_findings
         self.valid_nist_refs = valid_nist_refs or HallucinationGuardrail.VALID_NIST_REFS
         self.valid_finding_ids = {f.get("finding_id", "") for f in pqc_findings}
         self.valid_assets = {f.get("asset", "") for f in pqc_findings}
+        # Defaults to "today" in UTC (the day the pipeline is actually
+        # running), overridable for tests.
+        self.report_date = report_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def validate_report(self, report_text: str) -> dict:
         """
@@ -460,6 +480,7 @@ class OutputValidationGuardrail:
         violations.extend(self._check_finding_coverage(report_text))
         violations.extend(self._check_score_format(report_text))
         violations.extend(self._check_unfilled_placeholders(report_text))
+        violations.extend(self._check_date_accuracy(report_text))
 
         return {
             "passed": len(violations) == 0,
@@ -605,6 +626,28 @@ class OutputValidationGuardrail:
                 "detail": f"Literal placeholder text found in report: {sorted(set(literal))[:5]}",
             })
 
+        return violations
+
+    def _check_date_accuracy(self, report: str) -> list:
+        """
+        Flag any "Date:" / "Generated:" / "Prepared on:" line that doesn't
+        match the actual date the pipeline ran. The LLM has no reliable way
+        to know today's date on its own, so it either echoes a stale
+        training-data date (e.g. "2024-06-10") or a literal placeholder -
+        the placeholder case is caught by _check_unfilled_placeholders, this
+        catches the "confidently wrong date" case.
+        """
+        violations = []
+        for stated_date in set(self.DATED_LABEL_PATTERN.findall(report)):
+            if stated_date != self.report_date:
+                violations.append({
+                    "type": "incorrect_report_date",
+                    "severity": "medium",
+                    "detail": (
+                        f"Report states date '{stated_date}', which does not match "
+                        f"the actual generation date '{self.report_date}'."
+                    ),
+                })
         return violations
 
     def _is_known_reference(self, ref: str) -> bool:

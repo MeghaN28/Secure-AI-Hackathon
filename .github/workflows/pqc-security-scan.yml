@@ -6,9 +6,17 @@ on:
     branches:
       - main
 
+  # Only push, not pull_request, is scoped this way on purpose: a push to a
+  # branch that also has an open PR was triggering two independent runs for
+  # the same commit (pull_request + push), each making its own separate LLM
+  # call - so the PR comment and the console log of "the same commit" could
+  # legitimately show different guardrail results (non-deterministic LLM
+  # output), which is confusing and doubles LLM spend for no benefit.
+  # Direct pushes to main (e.g. a merge) still get scanned; feature-branch
+  # work is covered by the pull_request trigger.
   push:
     branches:
-      - "*"
+      - main
 
 
 permissions:
