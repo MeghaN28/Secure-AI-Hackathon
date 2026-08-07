@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 import config
 from rag_retriever import retrieve_knowledge
@@ -120,6 +121,15 @@ def build_prompt(context, remediation_plan, sonar_findings, evidence_by_finding,
 
     migration_waves = generate_migration_waves(pqc_findings)
 
+    # The LLM has no reliable notion of "today" - left to itself it either
+    # echoes a stale training-data date or a literal "[Current Date]"
+    # placeholder when it adds a report header (see guardrails.py's
+    # _check_date_accuracy / _check_unfilled_placeholders, which now catch
+    # both cases as a second line of defense). Giving it the real date and
+    # an explicit instruction fixes the common case; the guardrail catches
+    # the rest.
+    report_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     # Explicit allow-list of every algorithm name the LLM is permitted to
     # use, derived directly from evidence (current findings + their
     # recommended replacements). "Only discuss algorithms present in
@@ -198,8 +208,15 @@ IMPORTANT RULES:
   field label with nothing after it - if there is genuinely no value,
   write "No evidence available" instead of leaving it blank.
 
+- Do not add header fields that aren't part of the template below (e.g.
+  "Prepared for:", "Prepared by:", "Approved by:"). If you do include a
+  "Date" or "Generated" line anywhere in the report, it MUST be exactly
+  {report_date} - never a placeholder like "[Current Date]" and never any
+  other date.
+
 - REMINDER: the only algorithms you may name anywhere in the report are:
   {", ".join(allowed_algorithms) if allowed_algorithms else "(none present in findings)"}.
+  Today's date, if you need it, is {report_date}.
 
 
 
